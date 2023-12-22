@@ -106,7 +106,6 @@ for j in range(0, len(image_list)):
                 final_df = calibrate_phot(image_list[j], df, fltr, output_path)
                 
             except:
-                raise
                 print('SExtractor has failed! Check your installation or use [sex] = n for default photomotry.')
         
         # Otherwise we want to use the default Prose photometry

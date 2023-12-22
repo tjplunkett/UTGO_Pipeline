@@ -39,22 +39,24 @@ def get_zeropoint(impath, ap_size):
     must call source extraction process 
     """
     im = Image(impath)
+    im_dir = os.path.dirname(impath)
     try:
         zp = float(im.header['MAG_ZP'])
         zp_er = float(im.header['ZP_ER'])
     except:
         try:
-            command = 'python pseudosex.py ' + impath + ' 0 ' + str(ap_size) + ' y y'
+            command = 'python pseudosex.py ' + im_dir + ' 0 ' + str(ap_size) + ' y y'
             process = sub.Popen([command], shell=True)
             process.wait()
         except:
             # If there are issues with source extractor, use default Prose but warn
             print('WARNING! Source Extractor issue detected! Defaulting to Prose photometry...')
-            command = 'python pseudosex.py ' + impath + ' 0 ' + str(ap_size) + ' n y'
+            command = 'python pseudosex.py ' + im_dir + ' 0 ' + str(ap_size) + ' n y'
             process = sub.Popen([command], shell=True)
             process.wait()
         
         # Read from fits header once calculated
+        im = Image(impath)
         zp = float(im.header['MAG_ZP'])
         zp_er = float(im.header['ZP_ER'])
         
