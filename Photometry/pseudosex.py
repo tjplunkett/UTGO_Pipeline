@@ -94,10 +94,11 @@ for j in range(0, len(image_list)):
         if args.sex == 'y' or args.sex == 'Y':  
             try:
                 # Try running source extractor
-                cat_name = image_list[j].replace('.fits', '.cat')
+                cat_name = os.path.basename(image_list[j]).replace('.fits', '.cat')
+                cat_path = os.path.join(output_path, cat_name)
                 fltr = fits.getval(image_list[j], 'FILTER')
                 command = 'sex ' + image_list[j] + ' -c '+ sex_path + ' -PARAMETERS_NAME ' + param_path\
-                + ' -CATALOG_NAME ' + cat_name
+                + ' -CATALOG_NAME ' + cat_path
                 process = sub.Popen([command], shell=True)
                 process.wait()
                 

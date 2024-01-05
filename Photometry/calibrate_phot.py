@@ -9,6 +9,7 @@ Defines functions to calibrate photometry catologs to GAIA DR2, along with findi
 
 """
 # Import necessary packages
+import argparse
 from astropy.io import ascii, fits
 import astropy.units as u
 import numpy as np
@@ -159,5 +160,53 @@ def calibrate_phot(im, cat_df, fltr, phot_dir):
     
     except:
         print('Unable to calibrate photometry!')
-        raise SystemExit(1)  
+        raise SystemExit(1) 
+
+        
+# Can be called on individual catalogues 
+if __name__ == '__main__':
+    # Set up the parser
+    parser = argparse.ArgumentParser(description='Calibrate a photometry catalogue to GAIA DR2 synthetic photometry')
+    parser.add_argument('path2cat', type=str, help='The path to the catalogue.')
+    parser.add_argument('filter', type=str, help="The bandpass/filter of observation (i.e for SDSS r', type: r")
+    parser.add_argument('sex', type=str, help = 'Is the file a Sextractor .cat file? (y/n)')
+    args = parser.parse_args()
+    
+    # Safety check
+    if not os.path.isfile(args.path2cat):
+        print('Not a valid file! Check path and try again.')
+        raise SystemExit(1)
+    
+    # Get the parent directory of file
+    par_dir = os.path.dirname(args.path2cat)
+    
+    # Read in catalogue, either a .cat from SExtractor or .csv from PhotUtils
+    if args.sex == 'y' or args.sex == 'Y':
+        cat_df = read_sex(args.path2cat)
+    else:
+        cat_df = pd.read_csv(args.path2cat)
+    
+    # Query gaia and save result for future use
+    gaia_df = find_gaia(cat_df, par_dir)
+    
+    try:
+        # Match catologs and get zeropoints and uncertainty
+        cat_match, gaia_match = cross_match(cat_df, gaia_df)
+        zp, zp_std, N = get_zp(cat_match, gaia_match, args.filter)
+        
+        print('The zeropoint was determined to be: {:} +/- {:}, using {:} stars'.format(zp, zp_std/np.sqrt(N), N))
+    
+        # Make a new catolog with calibrated mags
+        cat_df['H50_'+args.filter] = cat_df['MAG_APER'] + zp
+        cat_df['H50_'+args.filter+'_ERR'] = np.sqrt((cat_df['MAGERR_APER']**2) + (zp_std/np.sqrt(N))**2)
+        cat_df.to_csv(args.path2cat.replace('.cat', '_phot.csv'))
+    except:
+        print('Unable to calibrate photometry!')
+        raise SystemExit(1) 
+    
+    
+    
+    
+    
+    
     
