@@ -123,4 +123,19 @@ if __name__ == '__main__':
             if args.verbose == 'y':
                 print('Flipping file {:}'.format(rim))
             perform_flip(rim, all_path)
+    
+    # If there was astrometry on the original images, we need to redo it
+    if args.astr == 'y' or args.astr == 'Y':
+        r_flip_list = glob.glob(os.path.join('Right', '*_flipped.fits'))
+        all_list = glob.glob(os.path.join('All', '*.fits'))
+        
+        for im in r_flip_list:
+            cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + str(im) + ' H50'
+            process = sub.Popen([cmd], shell = True)
+            process.wait()
+                
+        for im in all_list:
+            cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + str(im) + ' H50'
+            process = sub.Popen([cmd], shell = True)
+            process.wait()    
         

@@ -4,6 +4,7 @@ flipper.py
 Author: Thomas Plunkett
 
 Purpose: Script to seperate meridian flipped images and rotate images by 180 degrees if necessary.
+If astrometry already performed and flipping completed, will force a re-run of astrometry. 
 """
 
 # Import necessary packages 
@@ -16,6 +17,7 @@ import os
 import shutil
 import glob
 import warnings
+import subprocess as sub
 
 def find_flip(source_pth, target_pth):
     """
@@ -30,11 +32,25 @@ def find_flip(source_pth, target_pth):
     """
     source = fits.open(source_pth)[0]
     target = fits.open(target_pth)[0]
-    try:
-        transf, (source_list, target_list) = aa.find_transform(source.data, target.data)
-        is_flipped = transf.rotation > np.pi/2
-    except:
-        is_flipped = None
+    wcs_s = WCS(source.header).wcs
+    wcs_t = WCS(target.header).wcs
+    
+    # If we have WCS keywords, use those!
+    if wcs_s.ctype[0] != '' and wcs_t.ctype[0] != '':
+        if wcs_s.cd[0,0]*wcs_t.cd[0,0] > 0:
+            is_flipped = False
+        elif wcs_s.cd[0,0]*wcs_t.cd[0,0] < 0: 
+            is_flipped = True
+        elif wcs_s.cd[0,0]*wcs_t.cd[0,0] == 0:
+            is_flipped = None 
+            
+    # No WCS, then use astroalign      
+    else:
+        try:
+            transf, (source_list, target_list) = aa.find_transform(source.data, target.data)
+            is_flipped = transf.rotation > np.pi/2
+        except:
+            is_flipped = None
     
     return is_flipped
 
@@ -82,7 +98,7 @@ def separate_flipped(target_dir, verbose):
 def perform_flip(im, outpath):
     """
     Function to perform flipping and then save to a new .fits file.
-    Note: currently does not flip WCS, if one exists
+    Note: currently does not flip WCS, if one exists. You may need to re-run astrometry.
     
     params:
     im - The image to flip
@@ -107,6 +123,7 @@ if __name__ == '__main__':
     # Set up the parser
     parser = argparse.ArgumentParser(description='Separate images into folders based on side of meridian and then flip one set to match')
     parser.add_argument('path2fits', type=str, help='The path to .fits files to check and flip.')
+    parser.add_argument('astr', type=str, help='Do the images have astrometry? (y/n)')
     parser.add_argument('verbose', type=str, help='Do you want to see the action? (y/n)')
     args = parser.parse_args()
 
@@ -138,5 +155,20 @@ if __name__ == '__main__':
             if args.verbose == 'y':
                 print('Flipping file {:}'.format(rim))
             perform_flip(rim, all_path)
+            
+    if args.astr == 'y' or args.astr == 'Y':
+        r_flip_list = glob.glob(os.path.join('Right', '*_flipped.fits'))
+        all_list = glob.glob(os.path.join('All', '*.fits'))
+        
+        for im in r_flip_list:
+            cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + str(im) + ' H50'
+            process = sub.Popen([cmd], shell = True)
+            process.wait()
+                
+        for im in all_list:
+            cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + str(im) + ' H50'
+            process = sub.Popen([cmd], shell = True)
+            process.wait()
+
     
     
