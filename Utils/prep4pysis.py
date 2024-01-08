@@ -1,20 +1,32 @@
+"""
+prep4pysis.py
+
+Author: Thomas Plunkett & JB Beaulieu 
+
+Purpose:
+
+Prepare images for difference imaging through PySIS. Code fixes header 
+keywords, flips images either side of the meridian and, if selected, re-performs
+astrometry. This is necessary if original files had astrometry.
+
+"""
+# Import necessary packages 
 import os
 import glob
 import sys
 import argparse
 from flipper import *
 from astropy.io import fits
-from astropy.io.fits import getheader, getdata, update, open
+from astropy.io.fits import getheader, getdata, update, open, setval
 from astropy import time
-from astropy.io.fits import setval
-from astropy.coordinates import SkyCoord
-from astropy.coordinates import EarthLocation
+from astropy.coordinates import SkyCoord, EarthLocation
 
 if __name__ == '__main__':
     # Set up the parser
     parser = argparse.ArgumentParser(description='Prepare reduced images for PySIS processing')
     parser.add_argument('path2fits', type=str, help='The path to .fits files to check and flip.')
     parser.add_argument('prefix', type=str, help='Image prefix to rename to')
+    parser.add_argument('astr', type=str, help='Has atrometry been performed on the images? (y/n)')
     parser.add_argument('verbose', type=str, help='Do you want to see the action? (y/n)')
     args = parser.parse_args()
 
@@ -126,16 +138,11 @@ if __name__ == '__main__':
     
     # If there was astrometry on the original images, we need to redo it
     if args.astr == 'y' or args.astr == 'Y':
-        r_flip_list = glob.glob(os.path.join('Right', '*_flipped.fits'))
-        all_list = glob.glob(os.path.join('All', '*.fits'))
-        
-        for im in r_flip_list:
-            cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + str(im) + ' H50'
-            process = sub.Popen([cmd], shell = True)
-            process.wait()
-                
-        for im in all_list:
-            cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + str(im) + ' H50'
-            process = sub.Popen([cmd], shell = True)
-            process.wait()    
+        cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + os.path.join(target_path, 'Right') + ' H50'
+        process = sub.Popen([cmd], shell = True)
+        process.wait()
+
+        cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + os.path.join(target_path, 'All') + ' H50'
+        process = sub.Popen([cmd], shell = True)
+        process.wait()  
         
