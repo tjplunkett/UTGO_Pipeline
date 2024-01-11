@@ -103,7 +103,7 @@ for j in range(0, len(image_list)):
                 process.wait()
                 
                 # Calibrate to GAIA
-                df = read_sex(cat_name)
+                df = read_sex(cat_path)
                 final_df = calibrate_phot(image_list[j], df, fltr, output_path)
                 
             except:
