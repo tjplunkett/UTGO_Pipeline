@@ -39,8 +39,11 @@ def splitter(fm, freq):
     for df in [total_df[total_df.exposure == e] for e in total_df.exposure.unique()]:
         df = df.reset_index()
         
-        # Depending on the input to 'freq' param, create lists of data frames 
-        if freq == 'day' or freq == 'Day' or freq == 'd' or freq == 'D':
+        # Depending on the input to 'freq' param, create lists of data frames
+        if freq == 'all' or freq == 'All' or freq == 'a' or freq == 'A':
+            df_list += [df]
+
+        elif freq == 'day' or freq == 'Day' or freq == 'd' or freq == 'D':
             df = df.set_index('dt')
             df_list += [df[df.index.day == d] for d in df.index.day.unique()]
 
