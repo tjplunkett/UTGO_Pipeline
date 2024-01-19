@@ -12,6 +12,7 @@ Perform astrometry on all images within a folder and subfolders
 """
 # Import necessary packages 
 from astropy.io import fits
+from astropy.wcs import WCS
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.io.fits import update, getdata, getheader
