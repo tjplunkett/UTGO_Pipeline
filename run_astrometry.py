@@ -77,15 +77,37 @@ def set_wcs(img, pix_size):
 
     return
 
+def check4wcs(im):
+    """
+    A function to check if astrometry has already been done on image.
+    
+    params:
+    im - The path to the image to check
+    """
+    source = fits.open(im)[0]
+    wcs_s = WCS(source.header).wcs
+    
+    if wcs_s.ctype[0] != '':
+        return True 
+    else:
+        return False
+        
+
 if __name__ == '__main__':
     # Set up the parser
     parser = argparse.ArgumentParser(description='Perform astrometry on images in a directory')
     parser.add_argument('object_folder', type=str, help='The path to the object directory')
     parser.add_argument('telescope', type=str, help='The telescope that collected this data')
+    parser.add_argument('redo', type=str, help='Redo astrometry, even if WCS is found? (y/n)')
     args = parser.parse_args()
     
+    # Safety and checks
     target_dir = os.path.abspath(args.object_folder)
+    if not os.path.isdir(target_dir):
+        print("This directory doesn't exist!")
+        raise SystemExit(1)
     
+    # Start action
     fm = FitsManager(target_dir, depth=5)
     
     if args.telescope == 'H50' or 'Planewave 50cm' or 'Harlingten 50cm':
@@ -94,8 +116,21 @@ if __name__ == '__main__':
         print('Unidentified telescope!')
         raise SystemExit(1)
     
-    for img in fm.all_images:
-        try:
-            set_wcs(img, pix_size)
-        except:
-            print('Unable to find solution for {:}... Moving on!'.format(img))
+    # Force redo of astrometry
+    if args.redo == 'Y' or args.redo == 'y':
+        for img in fm.all_images:
+            try:
+                set_wcs(img, pix_size)
+            except:
+                print('Unable to find solution for {:}... Moving on!'.format(img))
+    
+    # Otherwise, check for WCS and only perform astrometry on images without
+    else:
+        for img in fm.all_images:
+            try:
+                if check4wcs(img):
+                    set_wcs(img, pix_size)
+                else:
+                    print('Image {:} already has astrometry. Moving on!'.format(img))
+            except:
+                print('Unable to find solution for {:}... Moving on!'.format(img))
