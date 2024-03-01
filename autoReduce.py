@@ -15,7 +15,7 @@ run 'on the fly' in order to reduce data quickly during observations.
 # Import necessary packages
 from prose import Image, Sequence, blocks, FitsManager, Observation
 from astropy.io import fits
-from UTGO_Pipeline.Utils.pytrimmer import *
+from Utils.pytrimmer import *
 import numpy as np
 import pandas as pd
 import argparse
@@ -157,6 +157,11 @@ for im in fm.all_images:
         size_y = hdu.header['NAXIS2']
         obj = hdu.header['OBJECT']
 
+        # Fix spaces in name/object
+        if ' ' in obj:
+            fits.setval(im, 'OBJECT', value=obj.replace(' ', '_'))
+            obj = obj.replace(' ', '_')
+            
         if size_x == 2048:
             subf_x = 1
         else:
@@ -236,10 +241,12 @@ for pth in dim_arr:
             hdu = fits.open(re)[0]
             if 'HISTORY' not in hdu.header:
                 fits.setval(re, 'HISTORY', value=comment_str)
+                
             ob = hdu.header['OBJECT']
             if ' ' in ob:
-                fits.setval(re, 'OBJECT', value=ob.replace(' ', '_')
+                fits.setval(re, 'OBJECT', value=ob.replace(' ', '_'))
                 ob = ob.replace(' ', '_')
+                            
             ob_flt = hdu.header['FILTER']
             ob_path = os.path.join(end_dir, ob)
             
@@ -274,7 +281,7 @@ for pth in dim_arr:
 if args.astrometry == 'y' or args.astrometry == 'Y':        
     for o in object_arr:
         obj_path = os.path.join(end_dir, o)
-        cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + str(obj_path) + ' H50 n'
+        cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + str(obj_path) + ' H50 y'
         process = subprocess.Popen([cmd], shell=True)
         process.wait()
 

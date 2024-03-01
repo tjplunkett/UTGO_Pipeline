@@ -48,15 +48,15 @@ def make_master_bias(im_list, method, output_filename):
     if method == 'sigmaclip':
         combined_bias = combine(im_list, method='average', \
             sigma_clip=True, sigma_clip_low_thresh=5, sigma_clip_high_thresh=5, \
-                                 sigma_clip_func=np.ma.median, sigma_clip_dev_func=mad_std, unit=u.adu)
+                                 sigma_clip_func=np.ma.median, sigma_clip_dev_func=mad_std, unit=u.adu, overwrite_output=True)
     
     elif method == 'median':
-        combined_bias = combine(im_list, method='median', unit = u.adu)
+        combined_bias = combine(im_list, method='median', unit = u.adu, overwrite_output=True)
     
     combined_bias.meta['combined'] = True
     combined_bias.write(output_filename)
 
-def make_master_darks(im_list, method, output_filename):
+def make_master_dark(im_list, method, output_filename):
     """
     A function to combine flat frames into a master flat.
     
@@ -67,10 +67,10 @@ def make_master_darks(im_list, method, output_filename):
     if method == 'sigmaclip':
         combined_dark = combine(im_list, method='average',\
             sigma_clip=True, sigma_clip_low_thresh=5, sigma_clip_high_thresh=5, \
-                                 sigma_clip_func=np.ma.median, sigma_clip_dev_func=mad_std, unit=u.adu)
+                                 sigma_clip_func=np.ma.median, sigma_clip_dev_func=mad_std, unit=u.adu, overwrite_output=True)
     
     elif method == 'median':
-        combined_dark = combine(im_list, method='median', unit=u.adu)
+        combined_dark = combine(im_list, method='median', unit=u.adu, overwrite_output=True)
     
     combined_dark.meta['combined'] = True
     combined_dark.write(output_filename)
@@ -85,10 +85,10 @@ def make_master_flat(im_list, method, output_filename):
     im_list - The list of flat images to combine
     """
     if method == 'sigmaclip':
-        combined_flat = combine(im_list, method='average', scale=inv_median, sigma_clip=True, sigma_clip_low_thresh=5, sigma_clip_high_thresh=1.5, sigma_clip_func=np.ma.median, sigma_clip_dev_func=mad_std, unit=u.adu)
+        combined_flat = combine(im_list, method='average', scale=inv_median, sigma_clip=True, sigma_clip_low_thresh=5, sigma_clip_high_thresh=1.5, sigma_clip_func=np.ma.median, sigma_clip_dev_func=mad_std, unit=u.adu, overwrite_output=True)
         
     elif method == 'median':
-        combined_flat = combine(im_list, method='median', scale=inv_median, unit=u.adu)
+        combined_flat = combine(im_list, method='median', scale=inv_median, unit=u.adu, overwrite_output=True)
     
     combined_flat.meta['combined'] = True
     combined_flat.write(output_filename)

@@ -157,11 +157,11 @@ if __name__ == '__main__':
     
     # If there was astrometry on the original images, we need to redo it
     if args.astr == 'y' or args.astr == 'Y':
-        cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + os.path.join(target_path, 'Right') + ' H50'
+        cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + os.path.join(target_path, 'Right') + ' H50 y'
         process = sub.Popen([cmd], shell = True)
         process.wait()
 
-        cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + os.path.join(target_path, 'All') + ' H50'
+        cmd = 'python /home/obs/UTGO_Pipeline/run_astrometry.py ' + os.path.join(target_path, 'All') + ' H50 y'
         process = sub.Popen([cmd], shell = True)
         process.wait()
 

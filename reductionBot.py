@@ -22,7 +22,7 @@ from datetime import datetime
 dir_df = pd.read_csv('directories.csv')
 year_str = str(datetime.now().year)
 path2data = os.path.abspath(dir_df.data_dir[0])
-path2yr = os.path.join('path2yr',year_str)
+path2yr = os.path.join(path2data,year_str)
 path2txt = os.path.join(path2yr, 'ReducedFolders.txt')
 
 # Read text file. Might fail if the file is empty/doesnt exist
@@ -45,7 +45,7 @@ for dirt in dir_list:
         print('Working on night: {:}'.format(dirt))
         
         # Re-name files here, so shit doesn't break
-        file_list = glob.glob(os.path.join(dirt, '*.fits'))
+        file_list = glob.glob(os.path.join(os.path.join(path2yr, dirt), '*.fits'))
         for file in file_list:
             if ' ' in str(file):
                 os.rename(file, str(file).replace(' ','_'))
@@ -56,7 +56,7 @@ for dirt in dir_list:
         process.wait()
         
         # Auto reduction
-        cmd2 = 'python /home/obs/UTGO_Pipeline/autoReduce.py ' + str(os.path.join(path2yr, dirt)) + ' y n'
+        cmd2 = 'python /home/obs/UTGO_Pipeline/autoReduce.py ' + str(os.path.join(path2yr, dirt)) + ' y y'
         process = subprocess.Popen([cmd2], shell=True)
         process.wait()
         
