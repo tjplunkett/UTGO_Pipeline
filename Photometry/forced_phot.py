@@ -23,14 +23,14 @@ from astropy.time import Time
 import subprocess as sub
 
 # Constants
-gain = 1.25 # e-/ADU
-rn = 8.7 # e-
-D = 0.14 # e/pix/sec
-ki, ki_er = 0.125, 0.003
-kr, kr_er = 0.170, 0.003
-kg, kg_er = 0.244, 0.005
-kV, kV_er = 0.196, 0.004
-kB, kB_er = 0.309, 0.029
+gain = 1.28 # e-/ADU
+rn = 7.10 # e-
+D = 0.12 # e/pix/sec
+ki, ki_er = 0.18, 0.02
+kr, kr_er = 0.20, 0.02
+kg, kg_er = 0.32, 0.01
+kV, kV_er = 0.24, 0.01
+kB, kB_er = 0.43, 0.01
 
 # Define necessary functions
 def get_zeropoint(impath, ap_size):
@@ -188,8 +188,8 @@ for im in image_list:
         phot_table['Airmass'] = [airmass]
         
         if ZP != None and ZP_er != None:
-            phot_table['H50_'+str(filt)] = phot_table['MAG_APER'] + ZP
-            phot_table['H50_'+str(filt)+'_ER'] = np.sqrt((phot_table['MAGERR_APER']**2)+(ZP_er**2))
+            phot_table['H50_'+str(filt)] = np.round(phot_table['MAG_APER'] + ZP, 3)
+            phot_table['H50_'+str(filt)+'_ER'] = np.round(np.sqrt((phot_table['MAGERR_APER']**2)+(ZP_er**2)),3)
         
         phot_table = phot_table.to_pandas()
 

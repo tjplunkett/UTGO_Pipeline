@@ -55,14 +55,8 @@ fm = FitsManager(target_dir, depth=args.depth)
 print(fm)
 image_list = fm.to_pandas('select path from files')['path'].to_numpy()
 
-# image 0 will be our reference. Sometimes acts weird on stacks...
-try:
-    ref = Image(fm.all_images[0])
-except:
-    ref = Image(image_list[0])
-
+# Define the detection and PSF build
 detection = Sequence([
-    blocks.Trim(),
     blocks.detection.PointSourceDetection(),
     blocks.Cutouts(),                   # making stars cutouts
     blocks.MedianPSF(),                 # building PSF
@@ -70,7 +64,16 @@ detection = Sequence([
 ])
 
 # Run this and then show us the stars
-detection.run(ref, show_progress=True)
+found_ref = False
+count = 0
+while found_ref == False:
+    try:
+        ref = Image(image_list[count])
+        detection.run(ref, show_progress=False)
+        found_ref = True
+    except:
+        count += 1
+        
 ref.show()
 plt.show()
 
@@ -98,7 +101,7 @@ for j in range(0, len(image_list)):
                 cat_path = os.path.join(output_path, cat_name)
                 fltr = fits.getval(image_list[j], 'FILTER')
                 command = 'sex ' + image_list[j] + ' -c '+ sex_path + ' -PARAMETERS_NAME ' + param_path\
-                + ' -CATALOG_NAME ' + cat_path
+                + ' -PHOT_APERTURES ' + str(2*float(args.ap_size)) + ' -CATALOG_NAME ' + cat_path
                 process = sub.Popen([command], shell=True)
                 process.wait()
                 
