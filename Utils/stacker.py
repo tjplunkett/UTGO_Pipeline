@@ -45,13 +45,17 @@ def splitter(fm, freq):
 
         elif freq == 'day' or freq == 'Day' or freq == 'd' or freq == 'D':
             df = df.set_index('dt')
-            df_list += [df[df.index.day == d] for d in df.index.day.unique()]
+            months_df = [df[df.index.month == m] for m in df.index.month.unique()]
+            for month in months_df:
+                df_list += [df[df.index.day == d] for d in df.index.day.unique()]
 
         elif freq == 'hour' or freq == 'Hour' or freq == 'h' or freq == 'H':
             df = df.set_index('dt')
-            days_df = [df[df.index.day == d] for d in df.index.day.unique()]
-            for day in days_df:
-                df_list += [day[day.index.hour == h] for h in day.index.hour.unique()]
+            months_df = [df[df.index.month == m] for m in df.index.month.unique()]
+            for month in months_df:
+                days_df += [df[df.index.day == d] for d in df.index.day.unique()]
+                for day in days_df:
+                    df_list += [day[day.index.hour == h] for h in day.index.hour.unique()]
         else:
             df_groups = df.groupby(df.index // int(freq))
 
@@ -112,7 +116,7 @@ print(fm)
 ref = Image(fm.all_images[0])
 objct = ref.header['OBJECT']
 
-# Define Calibration sequence from reduced
+# Define 'calibration' sequence
 CalibFromRed = Sequence([
     blocks.Trim(),
     blocks.SegmentedPeaks(), # stars detection
