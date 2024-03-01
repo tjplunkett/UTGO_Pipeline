@@ -49,8 +49,8 @@ planewave_dict = dict(
     # Specs
     # -----
     trimming = (0, 0), # in pixel along y/x
-    read_noise = 7.13, # in ADU
-    gain = 1.2, # in e-/ADU
+    read_noise = 7.10, # in ADU
+    gain = 1.28, # in e-/ADU
     altitude = 646.0, # in meters
     diameter = 0.508, # in meters
     pixel_scale = 0.796, # in arcseconds
@@ -98,8 +98,8 @@ cdk20_dict = dict(
     # Specs
     # -----
     trimming = (0, 0), # in pixel along y/x
-    read_noise = 7.13, # in ADU
-    gain = 1.2, # in e-/ADU
+    read_noise = 7.10, # in ADU
+    gain = 1.28, # in e-/ADU
     altitude = 646.0, # in meters
     diameter = 0.508, # in meters
     pixel_scale = 0.796, # in arcseconds

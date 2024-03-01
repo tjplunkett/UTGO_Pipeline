@@ -14,4 +14,6 @@ Then, assuming PIP was installed successfully to this environment, type:
 
 pip install -r requirements.txt 
 
-For more assistance, please see the UTGO_Pipeline_Documentation file.
+For more assistance, please see the UTGO_Pipeline_Documentation file. 
+
+Note: If you would like to run this code on your own system, you will need to add paths to the 'directories.csv'. This file tells the code where the calibration frames, data and output folders live. This is mainly implemented for security reasons.

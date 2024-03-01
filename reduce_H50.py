@@ -11,7 +11,7 @@ Performs calibration (i.e dark-subtraction and flat-fielding) and then saves the
 # Import necessary packages 
 from prose import Image, Sequence, blocks, FitsManager, Observation
 from astropy.io import fits
-from pytrimmer import *
+from UTGO_Pipeline.Utils.pytrimmer import *
 import numpy as np
 import argparse
 import glob
