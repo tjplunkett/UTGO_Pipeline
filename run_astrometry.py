@@ -69,6 +69,11 @@ def set_wcs(img, pix_size):
     process = sub.Popen([command], shell=True)
     process.wait()
 
+    # If we don't solve, rename to indicate a bad file
+    if not os.path.exists(img.replace('fits', 'solved')):
+        bad_img = img.replace('.fits', '.bad')
+        os.rename(img, bad_img)
+
     new_img = img.replace('.fits', '.new')
     os.rename(new_img, img)
     
@@ -86,9 +91,9 @@ def check4wcs(im):
     im - The path to the image to check
     """
     source = fits.open(im)[0]
-    wcs_s = WCS(source.header).wcs
+    wcs_s = WCS(source.header)
     
-    if wcs_s.ctype[0] != '':
+    if wcs_s.has_celestial:
         return True 
     else:
         return False
@@ -129,7 +134,7 @@ if __name__ == '__main__':
     else:
         for img in fm.all_images:
             try:
-                if check4wcs(img):
+                if check4wcs(img) == False:
                     set_wcs(img, pix_size)
                 else:
                     print('Image {:} already has astrometry. Moving on!'.format(img))

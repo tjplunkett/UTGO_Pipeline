@@ -1,5 +1,5 @@
 """
-raw_phot.py
+aper_phot.py
 
 Author: Thomas Plunkett
 
@@ -15,7 +15,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import argparse
+import subprocess as sub
 import os
+import glob
 
 # Constants
 gain = 1.28 # e-/ADU
@@ -87,7 +89,6 @@ def get_ext_coeffs(filtr):
 # Set up the parser
 parser = argparse.ArgumentParser(description='Perform aperture photometry on images within specified directories and output LC and other plots')
 parser.add_argument('path', help='The path to folder containing .fits files.')
-parser.add_argument('depth', type=int, help='How many sub folders to search, i.e if 0 will only access given directory.')
 parser.add_argument('ID', type=str, help='The target ID.')
 parser.add_argument('AutoAperture', type=str, help='Use the automatic aperture? (y/n)')
 parser.add_argument('verbose', type=str, help='Want to know whats happening? (y/n)')
@@ -98,35 +99,49 @@ if not os.path.isdir(target_dir):
     print("This directory doesn't exist!")
     raise SystemExit(1)
 
+# Define path to nightly summaries
+night_sum = os.path.join(target_dir, 'Nightly_Summaries')
+
 # Begin the action!
-fm = FitsManager(target_dir, depth=args.depth)
+fm = FitsManager(target_dir, depth=0)
 good_ims = []
 print(fm)
 
 # --------------------------------------------------------------------------------------
 # Stage 1 - Build the PSF model for the images and get median FWHM
 PSF = Sequence([
-    blocks.detection.PointSourceDetection(), # stars detection
-    blocks.Cutouts(clean=False), 
-    blocks.detection.LimitStars(min=5), # making stars cutouts
-    blocks.MedianPSF(),                 # building PSF
-    blocks.psf.Moffat2D(),              # modeling PSF
+        blocks.detection.PointSourceDetection(), # stars detection
+        blocks.Cutouts(clean=False), 
+        blocks.detection.LimitStars(min=12), # making stars cutouts
+        blocks.MedianPSF(),                 # building PSF
+        blocks.psf.Moffat2D(),              # modeling PSF
 ])
 
-try:
-    ref = Image(fm.all_images[0])
-
-    # Run this and then show us the stars to pick the target
-    PSF.run(ref, show_progress=True)
-    ref.show()
-    plt.show()
-    
-except:
-    ref = Image(fm.all_images[1])
-    # Run this and then show us the stars to pick the target
-    PSF.run(ref, show_progress=True)
-    ref.show()
-    plt.show()
+if os.path.isdir(night_sum):
+    try:
+        sum_file = glob.glob(os.path.join(night_sum, str('Summary_*')))[0]
+        sum_df = pd.read_csv(sum_file) 
+        best_img = sum_df[sum_df['FWHM [pix]'] == sum_df['FWHM [pix]'].min()]['File'].to_list()[0]
+        ref = Image(best_img)
+        PSF.run(ref, show_progress=False)
+        ref.show()
+        plt.show()
+    except:
+        raise
+        print('No nightly summary found... Continuing manual search for best image...')
+else:  
+    try:
+        ref = Image(fm.all_images[0])
+        # Run this and then show us the stars to pick the target
+        PSF.run(ref, show_progress=True)
+        ref.show()
+        plt.show()
+    except:
+        ref = Image(fm.all_images[1])
+        # Run this and then show us the stars to pick the target
+        PSF.run(ref, show_progress=True)
+        ref.show()
+        plt.show()
 
 # Choose the target and aperture size
 target_no = int(input('Which is the target? '))
@@ -134,7 +149,7 @@ target_no = int(input('Which is the target? '))
 # First get the FWHM of each image, find the median
 fwhm_data = blocks.Get("fwhm")
 get_fwhm = Sequence([
-    *PSF[0:-1],                   # apply the same calibration to all images
+    *PSF[0:-1],   # apply the same calibration to all images
     blocks.psf.Moffat2D(reference=ref),   # providing a reference improve the PSF optimisation
     fwhm_data,
 ])

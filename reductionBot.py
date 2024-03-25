@@ -19,7 +19,8 @@ import subprocess
 from datetime import datetime
 
 # Find current year and define important paths
-dir_df = pd.read_csv('directories.csv')
+dir_path = os.path.abspath('/home/obs/UTGO_Pipeline/directories.csv')
+dir_df = pd.read_csv(dir_path)
 year_str = str(datetime.now().year)
 path2data = os.path.abspath(dir_df.data_dir[0])
 path2yr = os.path.join(path2data,year_str)
@@ -56,7 +57,7 @@ for dirt in dir_list:
         process.wait()
         
         # Auto reduction
-        cmd2 = 'python /home/obs/UTGO_Pipeline/autoReduce.py ' + str(os.path.join(path2yr, dirt)) + ' y y'
+        cmd2 = 'python /home/obs/UTGO_Pipeline/autoReduce.py ' + str(os.path.join(path2yr, dirt)) + ' n n'
         process = subprocess.Popen([cmd2], shell=True)
         process.wait()
         

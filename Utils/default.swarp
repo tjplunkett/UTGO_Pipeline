@@ -67,7 +67,7 @@ BACK_TYPE              AUTO            # AUTO or MANUAL
                                        # (all or for each image)
 BACK_DEFAULT           0.0             # Default background value in MANUAL
                                        # (all or for each image)
-BACK_SIZE              128             # Background mesh size (pixels)
+BACK_SIZE              64             # Background mesh size (pixels)
                                        # (all or for each image)
 BACK_FILTERSIZE        3               # Background map filter range (meshes)
                                        # (all or for each image)

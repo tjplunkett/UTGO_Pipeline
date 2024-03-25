@@ -15,12 +15,14 @@ import pandas as pd
 import numpy as np
 import argparse
 import os
+import glob
 
 # Set up the parser
 parser = argparse.ArgumentParser(description='Perform differential photometry on images within specified directories and output LC and other plots')
 parser.add_argument('path', help='The path to folder containing .fits files.')
 parser.add_argument('depth', type=int, help='How many sub folders to search, i.e if 0 will only access given directory.')
 parser.add_argument('threshold', type=float, help='Source detection threshold (sigmas above background).')
+parser.add_argument('obs_date', type=str, help='The date of observation (ddmmyyyy)')
 args = parser.parse_args()
 
 # Safety and checks
@@ -34,6 +36,9 @@ output_path = os.path.join(target_dir, 'Phot_Outputs')
 if not os.path.isdir(output_path):
     os.mkdir(output_path)
 
+# Define path to nightly summaries
+night_sum = os.path.join(target_dir, 'Nightly_Summaries')
+
 # Begin the action!
 # ------------------------------------------------------------------------
 # Part 1 - Find a good reference image, model PSF and discard bad images
@@ -42,26 +47,42 @@ print(fm)
 
 # Find a reference image from best seeing and discard bad images
 print('Searching for reference image... Please wait!')
-fwhm_data = blocks.Get("fwhm")
-good_ims = []
 
-PSF = Sequence([
-    blocks.detection.PointSourceDetection(n=20),  # stars detection
-    blocks.Cutouts(), # making stars cutouts
-    blocks.MedianPSF(),                 # building PSF
-    blocks.psf.FastGaussian(),              # modeling PSF
-    fwhm_data,
-])
-
-for im in fm.all_images:
+if os.path.isdir(night_sum):
     try:
-        print('Working on: {:}...'.format(im))
-        PSF.run(im, show_progress=False)
-        good_ims += [im]
+        sum_file = glob.glob(os.path.join(night_sum, str('Summary_*'+args.obs_date+'*')))[0]
+        sum_df = pd.read_csv(sum_file)
+        good_ims = sum_df['File'] 
+        best_img = sum_df[sum_df['FWHM [pix]'] == sum_df['FWHM [pix]'].min()]['File'].to_list()[0]
+        best_im = Image(best_img)
     except:
-        print('Discarding image {:}...'.format(im))
+        raise
+        print('No nightly summary found... Continuing manual search for best image...')
 
-best_im = Image(good_ims[np.argmin(np.array(fwhm_data.fwhm))])
+else:   
+    fwhm_data = blocks.Get("fwhm")
+    good_ims = []
+
+    PSF = Sequence([
+        blocks.detection.PointSourceDetection(n=50),  # stars detection
+        blocks.Cutouts(), # making stars cutouts
+        blocks.MedianPSF(),                 # building PSF
+        blocks.psf.FastGaussian(),              # modeling PSF
+        fwhm_data,
+    ])
+
+    for im in fm.all_images:
+        try:
+            print('Working on: {:}...'.format(im))
+            PSF.run(im, show_progress=False)
+            good_ims += [im]
+        except:
+            print('Discarding image {:}...'.format(im))
+
+            best_img = good_ims[np.argmin(np.array(fwhm_data.fwhm))]
+            best_im = Image(best_img)
+
+print('Best image for night {:}: {:}'.format(args.obs_date, best_img))
 
 detection = Sequence([
     blocks.detection.PointSourceDetection(threshold = args.threshold),  # stars detection
