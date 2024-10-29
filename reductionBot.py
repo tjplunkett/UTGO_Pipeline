@@ -11,6 +11,8 @@ A script that reads a text file of reduced folders and compares to current folde
 If a new folder is present, passes this to autoReduce.py for automatic reduction.
 
 """
+#!/bin/bash
+
 # Import necessary packages 
 import pandas as pd
 import os
@@ -41,6 +43,8 @@ for item in os.listdir(path2yr):
         dir_list += [item]
 
 # Compare if entries are in the old list or not
+dir_list = sorted(dir_list, key=lambda x: datetime.strptime(x, "%Y%m%d"))
+
 for dirt in dir_list:
     if dirt not in old_list:
         print('Working on night: {:}'.format(dirt))

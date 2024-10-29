@@ -27,7 +27,7 @@ args = parser.parse_args()
 
 # Define the paths
 target_dir = os.path.abspath(args.night_folder)
-dir_df = pd.read_csv(os.path.abspath('directories.csv'))
+dir_df = pd.read_csv(os.path.abspath('/home/obs/UTGO_Pipeline/directories.csv'))
 calib_dir = os.path.abspath(dir_df.cal_dir[0])
 flat_dir = os.path.join(calib_dir, 'Flats')
 dark_dir = os.path.join(calib_dir, 'Darks')

@@ -61,10 +61,11 @@ def set_wcs(img, pix_size):
     start = time.localtime(time.time())
     print('Processing', os.path.basename(img), 'at', time.asctime(start))
 
-    pix_low, pix_high = str(pix_size * 0.9), str(pix_size * 1.1)
+    pix_low, pix_high = str(pix_size * 0.99), str(pix_size * 1.01)
     
     center = get_center(img)
-    command = '/usr/local/astrometry/bin/solve-field --fits -Op -l 300 -t 3  -5 1.0 -u app' + ' -L ' + pix_low + ' -H ' + pix_high + ' -3 ' + str(center[0]) + ' -4 ' + str(center[1]) + ' ' + img
+    print(center)
+    command = '/usr/local/astrometry/bin/solve-field --fits -Op -l 300 -t 3 -5 2.0 -u app -z 2' + ' -L ' + pix_low + ' -H ' + pix_high + ' -3 ' + str(center[0]) + ' -4 ' + str(center[1]) + ' ' + img
     
     process = sub.Popen([command], shell=True)
     process.wait()
@@ -73,6 +74,8 @@ def set_wcs(img, pix_size):
     if not os.path.exists(img.replace('fits', 'solved')):
         bad_img = img.replace('.fits', '.bad')
         os.rename(img, bad_img)
+        to_rm = img.replace('.fits', '.axy')
+        os.remove(to_rm)
 
     new_img = img.replace('.fits', '.new')
     os.rename(new_img, img)
@@ -117,7 +120,7 @@ if __name__ == '__main__':
     fm = FitsManager(target_dir, depth=5)
     
     if args.telescope == 'H50' or 'Planewave 50cm' or 'Harlingten 50cm':
-        pix_size = 0.798
+        pix_size = 0.8
     else:
         print('Unidentified telescope!')
         raise SystemExit(1)

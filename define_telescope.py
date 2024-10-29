@@ -36,7 +36,7 @@ planewave_dict = dict(
     keyword_bjd = "BJD",
     #keyword_mjd = "MJD-OBS",
     #keyword_flip = "PIERSIDE",
-    keyword_observation_time = "LOCALTIM",
+    #keyword_observation_time = "LOCALTIM",
 
     # Units, formats and scales
     # -------------------------
@@ -85,7 +85,7 @@ cdk20_dict = dict(
     keyword_bjd = "BJD",
     #keyword_mjd = "MJD-OBS",
     #keyword_flip = "PIERSIDE",
-    keyword_observation_time = "LOCALTIM",
+    #keyword_observation_time = "LOCALTIM",
 
     # Units, formats and scales
     # -------------------------

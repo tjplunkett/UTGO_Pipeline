@@ -33,7 +33,7 @@ parser.add_argument('verbose', type=str, help='Do you want information on what i
 args = parser.parse_args()
 
 # Define the paths
-dir_df = pd.read_csv(os.path.abspath('directories.csv'))
+dir_df = pd.read_csv('/home/obs/UTGO_Pipeline/directories.csv')
 target_dir = os.path.abspath(args.night_folder)
 calib_dir = os.path.abspath(dir_df.cal_dir[0])
 flat_dir = os.path.join(calib_dir, 'Flats')
@@ -48,7 +48,7 @@ other_dir = os.path.join(end_dir, 'Other')
 # Define some arrays
 transit_names = ['TOI','WASP', 'CoRoT','GJ', 'HAT', 'K2', 'KELT', 'KEPLER', 'NGTS', 'Qatar', 'TRAPPIST']
 ulens_names = ['OGLE', 'OB', 'MOA', 'MB', 'KMT', 'UKIRT']
-multimess_names = ['GRB', 'SNe', 'GW']
+multimess_names = ['GRB', 'SN', 'GW']
 
 # Checks and safety
 if not os.path.isdir(target_dir):
@@ -296,7 +296,7 @@ if not os.path.isdir(other_dir):
 
 for o in object_arr:
     final_dir = event_type(o)
-    obj_path = os.path.join(final_dir, o)
+    obj_path = os.path.join(final_dir, o.replace(' ','_'))
     if not os.path.isdir(obj_path):
         os.mkdir(obj_path)
 
@@ -334,9 +334,8 @@ for pth in dim_arr:
                     ])
                 elif len(flat_list) != 0 and len(dark_list)!= 0:
                     Calibrate = Sequence([
-                    #blocks.Calibration(darks=master_dark, bias=master_bias, flats=master_flat),
                     blocks.Calibration(darks=master_dark, bias=master_bias, flats=flat_list),
-                    blocks.CleanBadPixels(darks = dark_list, flats = flat_list),
+                    blocks.CleanBadPixels(darks = dark_list),
                     blocks.SaveReduced(destination=pth, overwrite=True),
                     ])
 
@@ -353,6 +352,7 @@ for pth in dim_arr:
 
                 for re in fits_list:
                     fits.setval(re, 'IMAGETYP', value='Light')
+                    fits.setval(re, 'SWCREATE', value = '')
                     hdu = fits.open(re)[0]
                     if 'HISTORY' not in hdu.header:
                         fits.setval(re, 'HISTORY', value=comment_str)
@@ -412,43 +412,64 @@ if args.on_the_fly == 'n' or args.on_the_fly == 'N':
             object_df = fm_object.files(type = 'light', path = True)
             obj_fltrs = object_df['filter'].unique()
             
-            # Loop through filters
+            # Loop through filters, check they aren't narrowband
             for fltr in obj_fltrs:
-                file_lst = []
-                proc_files = []
-                obj_fltr_fldr = os.path.join(dim, fltr)
-                all_files = object_df[object_df['filter'] == str(fltr)]['path'].to_numpy()
+                if fltr not in ['Ha', 'Hb', 'OIII', 'SII', 'Clear']:
+                    file_lst = []
+                    proc_files = []
+                    obj_fltr_fldr = os.path.join(dim, fltr)
+                    all_files = object_df[object_df['filter'] == str(fltr)]['path'].to_numpy()
                 
-                # Check for existing list of processed files, if doesnt exist create a new one. 
-                # Otherwise, we just append to previous list.
-                if os.path.isfile(os.path.join(obj_fltr_fldr, 'proc_files.csv')):
-                    proc_files = pd.read_csv(os.path.join(obj_fltr_fldr, 'proc_files.csv'))['Files'].to_list()
-                    for fl in all_files:
-                        if fl not in proc_files:
-                            file_lst += [fl]
-                            
-                    if len(file_lst) != 0:   
-                        best_imgs, ap, bkg  = make_summary(obj_fltr_fldr, file_lst, date_str.replace('/',''))
-                        if len(best_imgs) > 1 and ap != 0.0 and bkg != 0:
-                            stack_im = make_stack(obj_fltr_fldr, o, best_imgs, bkg, date_str.replace('/',''))
-                            run_sex(stack_im, ap, os.path.join(obj_fltr_fldr, 'Nightly_Summaries'))
-                        else:
-                            print('\n\n UNABLE TO PRODUCE SUMMARY FOR {:} IN {:} ON NIGHT: {:}... MOVING ON!'.format(o,fltr, date_str))
-                    proc_files += file_lst
+                    # Check for existing list of processed files, if doesnt exist create a new one. 
+                    # Otherwise, we just append to previous list.
+                    if os.path.isfile(os.path.join(obj_fltr_fldr, 'proc_files.csv')):
+                        proc_files = pd.read_csv(os.path.join(obj_fltr_fldr, 'proc_files.csv'))['Files'].to_list()
+                        for fl in all_files:
+                            if fl not in proc_files:
+                                file_lst += [fl]
+                               
+                        if len(file_lst) != 0:   
+                            best_imgs, ap, bkg  = make_summary(obj_fltr_fldr, file_lst, date_str.replace('/',''))
+                            if len(best_imgs) > 1 and ap != 0.0 and bkg != 0:
+                                try:
+                                    stack_im = make_stack(obj_fltr_fldr, o, best_imgs, bkg, date_str.replace('/',''))
+                                    run_sex(stack_im, ap, os.path.join(obj_fltr_fldr, 'Nightly_Summaries'))
+                                    fits.setval(stack_im, keyword='APER_RAD', value=float(ap))
+                                except:
+                                    raise
+                                    print('\n\n UNABLE TO PRODUCE SUMMARY FOR {:} IN {:} ON NIGHT: {:}... MOVING ON!'.format(o,fltr, date_str))
+                            else:
+                                print('\n\n NOT ENOUGH IMAGES! ABORTING SUMMARY FOR {:} IN {:} ON NIGHT: {:}... MOVING ON!'.format(o,fltr, date_str))
+                                
+                            proc_files += file_lst
                 
-                else:
-                    best_imgs, ap, bkg  = make_summary(obj_fltr_fldr, all_files, date_str.replace('/',''))
-                    if len(best_imgs) > 1 and ap != 0.0 and bkg != 0:
-                        stack_im = make_stack(obj_fltr_fldr, o, best_imgs, bkg, date_str.replace('/',''))
-                        run_sex(stack_im, ap, os.path.join(obj_fltr_fldr, 'Nightly_Summaries'))
                     else:
-                         print('\n\n UNABLE TO PRODUCE SUMMARY FOR {:} IN {:} ON NIGHT: {:}... MOVING ON!'.format(o,fltr, date_str))
-                    proc_files = all_files
+                        best_imgs, ap, bkg  = make_summary(obj_fltr_fldr, all_files, date_str.replace('/',''))
+                        if len(best_imgs) > 1 and ap != 0.0 and bkg != 0:
+                            try:
+                                stack_im = make_stack(obj_fltr_fldr, o, best_imgs, bkg, date_str.replace('/',''))
+                                run_sex(stack_im, ap, os.path.join(obj_fltr_fldr, 'Nightly_Summaries'))
+                                fits.setval(stack_im, keyword='APER_RAD', value=float(ap))
+                            except:
+                                print('\n\n UNABLE TO PRODUCE SUMMARY FOR {:} IN {:} ON NIGHT: {:}... MOVING ON!'.format(o,fltr, date_str))
+                        else:
+                            print('\n\n NOT ENOUGH IMAGES! ABORTING SUMMARY FOR {:} IN {:} ON NIGHT: {:}... MOVING ON!'.format(o,fltr, date_str))
+                            
+                        proc_files = all_files
                 
-                # Write out the proc_files.csv for book-keepin'
-                new_proc_df = pd.DataFrame({'Files': proc_files})
-                new_proc_df.to_csv(os.path.join(obj_fltr_fldr, 'proc_files.csv'))
-                  
+                    # Write out the proc_files.csv for book-keepin'
+                    new_proc_df = pd.DataFrame({'Files': proc_files})
+                    new_proc_df.to_csv(os.path.join(obj_fltr_fldr, 'proc_files.csv'))
+
+                    #upload_cmd = 'python /home/obs/UTGO_Pipeline/uploader.py ' + str(obj_fltr_fldr) + ' ' + os.path.basename(final_dir) + ' y n'
+                    upload_cmd = 'python /home/obs/UTGO_Pipeline/uploader.py ' + str(obj_fltr_fldr) + ' ' + str(o) + ' y n'
+                    try:
+                        upload_process = subprocess.Popen([upload_cmd], shell = True)
+                        upload_process.wait()
+                    except:
+                        print('\n\n UNABLE TO UPLOAD TO ARCSECOND.IO PORTAL... MOVING ON!')
+                        
+                                         
 if args.verbose == 'y':
     print('AUTO-REDUCTION IS COMPLETE! HISTORY HAS BEEN ADDED TO FITS HEADER.')    
 
