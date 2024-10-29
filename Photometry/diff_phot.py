@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser(description='Perform differential photometry on
 parser.add_argument('path', help='The path to folder containing .fits files.')
 parser.add_argument('depth', type=int, help='How many sub folders to search, i.e if 0 will only access given directory.')
 parser.add_argument('threshold', type=float, help='Source detection threshold (sigmas above background).')
-parser.add_argument('obs_date', type=str, help='The date of observation (ddmmyyyy)')
+parser.add_argument('obs_date', type=str, help='The date of observation (ddmmyyyy) or all')
 args = parser.parse_args()
 
 # Safety and checks
@@ -38,6 +38,7 @@ if not os.path.isdir(output_path):
 
 # Define path to nightly summaries
 night_sum = os.path.join(target_dir, 'Nightly_Summaries')
+proc_path = os.path.join(target_dir, 'proc_files.csv')
 
 # Begin the action!
 # ------------------------------------------------------------------------
@@ -50,11 +51,19 @@ print('Searching for reference image... Please wait!')
 
 if os.path.isdir(night_sum):
     try:
-        sum_file = glob.glob(os.path.join(night_sum, str('Summary_*'+args.obs_date+'*')))[0]
-        sum_df = pd.read_csv(sum_file)
-        good_ims = sum_df['File'] 
-        best_img = sum_df[sum_df['FWHM [pix]'] == sum_df['FWHM [pix]'].min()]['File'].to_list()[0]
-        best_im = Image(best_img)
+        if args.obs_date == 'all' or args.obs_date == 'All':
+            proc_df = pd.read_csv(proc_path)
+            sum_file = glob.glob(os.path.join(night_sum, str('Summary_*.csv')))[0]
+            sum_df = pd.read_csv(sum_file)
+            good_ims = proc_df['Files']
+            best_img = sum_df[sum_df['FWHM [pix]'] == sum_df['FWHM [pix]'].min()]['File'].to_list()[0]
+            best_im = Image(best_img)
+        else:
+            sum_file = glob.glob(os.path.join(night_sum, str('Summary_*'+args.obs_date+'*')))[0]
+            sum_df = pd.read_csv(sum_file)
+            good_ims = sum_df['File'] 
+            best_img = sum_df[sum_df['FWHM [pix]'] == sum_df['FWHM [pix]'].min()]['File'].to_list()[0]
+            best_im = Image(best_img)
     except:
         raise
         print('No nightly summary found... Continuing manual search for best image...')
@@ -79,8 +88,8 @@ else:
         except:
             print('Discarding image {:}...'.format(im))
 
-            best_img = good_ims[np.argmin(np.array(fwhm_data.fwhm))]
-            best_im = Image(best_img)
+        best_img = good_ims[np.argmin(np.array(fwhm_data.fwhm))]
+        best_im = Image(best_img)
 
 print('Best image for night {:}: {:}'.format(args.obs_date, best_img))
 
@@ -109,8 +118,8 @@ else:
     photometry = Sequence([
         *detection[0:-1],  # apply the same calibration to all images
         blocks.psf.Moffat2D(reference=best_im),   # providing a reference improve the PSF optimisation
-        blocks.detection.LimitStars(min=12),   # discard images not featuring enough stars
-        blocks.Twirl(best_im.stars_coords, n=12),       # compute image transformation
+        blocks.detection.LimitStars(min=20),   # discard images not featuring enough stars
+        blocks.Twirl(best_im.stars_coords, n=20),       # compute image transformation
 
        # set stars to the reference ones and apply the inverse
        # transformation previously found to match the ones in the image

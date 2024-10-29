@@ -178,11 +178,13 @@ for im in image_list:
         aperstats = ApertureStats(target_im.data, annulus_aperture)
         bkg_mean = aperstats.median
         total_bkg = bkg_mean * aperture.area
+        read_noise = ((rn/gain)**2)*aperture.area
+        
 
         # Create a dataframe of the photometry 
         phot_table['JD'] = [jd]
-        phot_table['Phot_Aper'] = gain*(phot_table['aperture_sum'] - total_bkg)
-        phot_table['SNR'] = phot_table['Phot_Aper']/np.sqrt(phot_table['Phot_Aper']+gain*total_bkg)
+        phot_table['Phot_Aper'] = (phot_table['aperture_sum'] - total_bkg)
+        phot_table['SNR'] = phot_table['Phot_Aper']/np.sqrt(phot_table['Phot_Aper']+total_bkg+read_noise)
         phot_table['MAG_APER'] = -2.5*np.log10(phot_table['Phot_Aper'])
         phot_table['MAGERR_APER'] = np.sqrt(((1/phot_table['SNR'])**2)+((k_er*airmass)**2))
         phot_table['Airmass'] = [airmass]

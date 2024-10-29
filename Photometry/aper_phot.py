@@ -181,7 +181,7 @@ if args.AutoAperture == 'n' or args.AutoAperture == 'N':
     fixed_photometry = Sequence([
         *PSF[0:-1],
         blocks.detection.LimitStars(min=12),   # discard images not featuring enough stars
-        blocks.Twirl(ref.stars_coords, n=12),  # compute image transformation
+        blocks.Twirl(ref.stars_coords, n=20),  # compute image transformation
 
         # set stars to the reference ones and apply the inverse
         # transformation previously found to match the ones in the image

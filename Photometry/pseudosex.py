@@ -40,7 +40,7 @@ if not os.path.isdir(target_dir):
     raise SystemExit(1)
 
 # Get some paths
-code_path = os.getcwd()
+code_path = os.path.abspath('/home/obs/UTGO_Pipeline/Photometry')
 config_path = os.path.join(code_path, 'config')
 sex_path = os.path.join(config_path, 'default.sex')
 param_path = os.path.join(config_path, 'default_Taz50.param')
@@ -108,6 +108,7 @@ for j in range(0, len(image_list)):
                 # Calibrate to GAIA
                 df = read_sex(cat_path)
                 final_df = calibrate_phot(image_list[j], df, fltr, output_path)
+                fits.setval(image_list[j], keyword='APER_RAD', value=float(args.ap_size))
                 
             except:
                 print('SExtractor has failed! Check your installation or use [sex] = n for default photomotry.')
