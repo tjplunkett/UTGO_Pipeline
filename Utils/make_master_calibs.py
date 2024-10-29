@@ -25,7 +25,7 @@ def get_date_str(image):
     """
     date_local = fits.getval(image, 'LOCALTIM')
     date_str = date_local.split(' ')[0]
-    if len(date_str) == 7:
+    if len(date_str) == 9:
         date_str = '0'+date_str
     date_str = date_str.replace('/','')
            
@@ -66,7 +66,7 @@ def make_master_darks(im_list, method, output_filename):
     """
     if method == 'sigmaclip':
         combined_dark = combine(im_list, method='average',\
-            sigma_clip=True, sigma_clip_low_thresh=5, sigma_clip_high_thresh=5, \
+            sigma_clip=True, sigma_clip_low_thresh=3, sigma_clip_high_thresh=3, \
                                  sigma_clip_func=np.ma.median, sigma_clip_dev_func=mad_std, unit=u.adu)
     
     elif method == 'median':

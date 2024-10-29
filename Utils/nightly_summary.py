@@ -50,7 +50,7 @@ def make_stack(target_dir, objct, best_ims, bkg, date):
     print(best_ims)
     
     if len(best_ims) != 0:
-        cwd = os.getcwd()
+        cwd = os.path.abspath('/home/obs/UTGO_Pipeline')
         swarp_file = os.path.join(cwd, os.path.join('Utils', 'default.swarp'))
         list_file = str(objct+'_Stack_'+date+'.ascii')
         
@@ -65,8 +65,8 @@ def make_stack(target_dir, objct, best_ims, bkg, date):
         output_file = list_file.replace('.ascii', '.fits')
 
         # Run SWarp
-        command = 'SWarp @' + list_file + ' -c ' + swarp_file + ' -IMAGEOUT_NAME ' + output_file + ' -WEIGHTOUT_NAME ' + output_file.replace('.fits', '.weight.fits')
-        process = sub.Popen([command], shell=True)
+        command = '/usr/bin/SWarp @' + list_file + ' -c ' + swarp_file + ' -IMAGEOUT_NAME ' + output_file + ' -WEIGHTOUT_NAME ' + output_file.replace('.fits', '.weight.fits')
+        process = sub.Popen(str(command), shell = True, executable="/bin/bash")
         process.wait()
 
         # Add constant?
@@ -143,7 +143,7 @@ def make_summary(target_dir, file_list, date):
                 data = img.data
                 hdr = img.header
                 exp = float(hdr['EXPTIME'])
-                sex_bkg = Background2D(data, (64, 64), filter_size=(5, 5), sigma_clip=sigma_clip, bkg_estimator=SExtractorBackground())   
+                sex_bkg = Background2D(data, (64, 64), filter_size=(9, 9), sigma_clip=sigma_clip, bkg_estimator=SExtractorBackground(), exclude_percentile = 25.0)   
                 bkg += [sex_bkg.background_median/exp]
         
             # If more than 5 images, take just 5. If less, use all.
@@ -182,14 +182,14 @@ def run_sex(stack_image, ap_size, output_path):
     ap_size - The size of the aperture to use (maybe make this the median FWHM)?
     output_path - Put into the nightly summary folder
     """
-    cwd = os.getcwd()
+    cwd = '/home/obs/UTGO_Pipeline/'
     config_path = os.path.join(os.path.join(cwd, 'Photometry'), 'config')
     sex_path = os.path.join(config_path, 'default.sex')
     param_path = os.path.join(config_path, 'default_Taz50.param')
     cat_name = os.path.basename(stack_image).replace('.fits', '.cat')
     cat_path = os.path.join(output_path, cat_name)
     fltr = fits.getval(stack_image, 'FILTER')
-    command = 'sex ' + stack_image + ' -c '+ sex_path + ' -PARAMETERS_NAME ' + param_path + ' -PHOT_APERTURES ' + str(ap_size) + ' -CATALOG_NAME ' + cat_path
+    command = '/home/obs/astromatic/bin/sex ' + stack_image + ' -c '+ sex_path + ' -PARAMETERS_NAME ' + param_path + ' -PHOT_APERTURES ' + str(ap_size) + ' -CATALOG_NAME ' + cat_path
     process = sub.Popen([command], shell=True)
     process.wait()
                 

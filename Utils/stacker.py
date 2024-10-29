@@ -15,6 +15,9 @@ import argparse
 import subprocess as sub
 import os
 import glob
+from photutils.background import Background2D, SExtractorBackground
+from astropy.stats import SigmaClip
+from astropy.io import fits
 
 # Get path for SWarp
 cwd = os.getcwd()
@@ -116,6 +119,9 @@ print(fm)
 ref = Image(fm.all_images[0])
 objct = ref.header['OBJECT']
 
+# Set our sigma clipper to +/- 3 st. devs
+sigma_clip = SigmaClip(sigma=3.0)
+
 # Define 'calibration' sequence
 CalibFromRed = Sequence([
     blocks.Trim(),
@@ -147,6 +153,7 @@ if args.method == 'swarp':
             # Get exposure time and store for later
             exp = df.exposure.unique()[0]
             counter = exp_list.count(exp) + 1
+            bkg = []
             
             # Define paths to pass to swarp, write these to ascii files for posterity
             path_list = df.path.to_list()
@@ -157,7 +164,23 @@ if args.method == 'swarp':
             # Run swarp
             command = 'SWarp @' + list_file + ' -c ' + swarp_file + ' -IMAGEOUT_NAME ' + list_file.replace('.ascii', '.fits') 
             process = sub.Popen([command], shell=True)
-            process.wait() 
+            process.wait()
+
+            if len(path_list) != 0:
+                for im in path_list:
+                    img = Image(im)
+                    data = img.data
+                    sex_bkg = Background2D(data, (64, 64), filter_size=(5, 5), sigma_clip=sigma_clip, bkg_estimator=SExtractorBackground()) 
+                    bkg += [sex_bkg.background_median]
+                    
+                med_bkg = np.median(bkg)
+
+            # Add constant bkg
+            if os.path.isfile(list_file.replace('.ascii', '.fits')):
+                im_data = fits.getdata(list_file.replace('.ascii', '.fits'))
+                stack_header = fits.getheader(list_file.replace('.ascii', '.fits'))
+                stack_data = im_data + np.full_like(im_data, med_bkg)
+                fits.writeto(list_file.replace('.ascii', '.fits'), data = stack_data, header = stack_header, overwrite = True)
             
             exp_list += [exp]
             
