@@ -124,6 +124,27 @@ def get_zp(cat_match, gaia_match, fltr):
     
     return zp_mean, zp_std, N
 
+def calc_maglim(im, cat_df, zp):
+    """
+    A function to find the rough magnitude limit for an image at SNR = 10 and SNR = 5.
+    """
+    cat_df['H50_mag'] = cat_df['MAG_APER'] + zp
+
+    # For SNR = 10:
+    cat_sub = cat_df[cat_df['MAGERR_APER'] <= 0.1]
+    lim_10 = cat_sub['H50_mag'].max()
+
+    # For SNR = 5:
+    cat_sub = cat_df[cat_df['MAGERR_APER'] <= 0.2]
+    lim_5 = cat_sub['H50_mag'].max()
+
+    try:
+        fits.setval(im, keyword='LIM_10', value=lim_10)
+        fits.setval(im, keyword='LIM_5', value=lim_5)
+    except:
+        print('Unable to find the magnitude limits...')
+    
+
 def add_zp2hdr(im, zp_mean, zp_std, N):
     """
     A convenience function to add zeropoints to a fits image header.
@@ -152,6 +173,7 @@ def calibrate_phot(im, cat_df, fltr, phot_dir):
 
         # Add zeropoint to the .fits headers
         add_zp2hdr(im, zp, zp_std, N)
+        calc_maglim(im, cat_df, zp)
     
         # Make a new catolog with calibrated mags
         cat_df['H50_'+fltr] = cat_df['MAG_APER'] + zp
