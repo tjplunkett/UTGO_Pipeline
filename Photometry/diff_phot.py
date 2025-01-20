@@ -20,7 +20,7 @@ import glob
 # Set up the parser
 parser = argparse.ArgumentParser(description='Perform differential photometry on images within specified directories and output LC and other plots')
 parser.add_argument('path', help='The path to folder containing .fits files.')
-parser.add_argument('depth', type=int, help='How many sub folders to search, i.e if 0 will only access given directory.')
+parser.add_argument('auto', type=str, help='Automatically choose comparison stars? (y/n)')
 parser.add_argument('threshold', type=float, help='Source detection threshold (sigmas above background).')
 parser.add_argument('obs_date', type=str, help='The date of observation (ddmmyyyy) or all')
 args = parser.parse_args()
@@ -43,7 +43,7 @@ proc_path = os.path.join(target_dir, 'proc_files.csv')
 # Begin the action!
 # ------------------------------------------------------------------------
 # Part 1 - Find a good reference image, model PSF and discard bad images
-fm = FitsManager(target_dir, depth=args.depth)
+fm = FitsManager(target_dir, depth=0)
 print(fm)
 
 # Find a reference image from best seeing and discard bad images
@@ -108,7 +108,7 @@ plt.show()
 # Part 2 - Perform the photometry on desired target
 
 # Choose the target
-target_no = int(input('Which is the target?'))
+target_no = int(input('Which is the target? '))
 
 # Check if photometry already exists
 if os.path.isfile(os.path.join(output_path, 'data.phot')):
@@ -170,51 +170,102 @@ else:
 obs.target = target_no
     
 # Choose the method to use to find comparison stars
-if input('Would you like to query Gaia to find comparison star? (y/n)').lower() == 'y':
+if args.auto == 'n' or args.auto == 'N':
+    comp_str = input('Please enter comp. star IDs as a comma-seperated list (i.e 2,3,4): ')
+    comp_ar = comp_str.split(',')
+    comp_idx = [int(j) for j in comp_ar]
     try:
-        print('Querying Gaia... This may take a moment')
-        comp_idx = query_gaia.find_comp_bycol2(best_im, target_no)
         obs.diff(comp_idx)
         obs.plot_summary()
-        plt.savefig(os.path.join(output_path, 'DR2_Summary'))
+        plt.savefig(os.path.join(output_path, 'Manual_Summary'))
         obs.show_stars(size=5)
-        plt.savefig(os.path.join(output_path, 'DR2_CompStars'))
-        #obs.plot_comps_lcs()
-        #plt.savefig(os.path.join(output_path, 'DR2_CompStarLC'))
-        #obs.plot_precision()
-        #plt.savefig(os.path.join(output_path, 'DR2_Precision'))
+        plt.savefig(os.path.join(output_path, 'Manual_Stars'))
+
+        # Plot comparison stars and artificial star
+        plt.figure(figsize=(9, 7))
+        obs.plot_raw_diff()
+        plt.savefig(os.path.join(output_path, 'Manual_RawDiff'))
+
+        plt.figure(figsize = (9,7))
+        obs.plot_comps_lcs()
+        plt.savefig(os.path.join(output_path, 'Manual_CompStarLC'))
+
+        #Plot the psf model
         obs.plot_psf_model()
         plt.savefig(os.path.join(output_path, 'PSF_Model'))
         plt.show()
     except:
-        print('Problem with querying gaia... Using Broeg algorithm instead!')
+        print('Manual choice has failed! Retry or use automatic mode instead...')
+
+else:
+    if input('Would you like to query Gaia to find comparison star? (y/n) ').lower() == 'y':
+        try:
+            print('Querying Gaia... This may take a moment')
+            comp_idx = query_gaia.find_comp_bycol2(best_im, target_no)
+            obs.diff(comp_idx)
+
+            # Plot the summary and compstar choice
+            obs.plot_summary()
+            plt.savefig(os.path.join(output_path, 'DR2_Summary'))
+            obs.show_stars(size=5)
+            plt.savefig(os.path.join(output_path, 'DR2_Stars'))
+
+            # Plot comparison stars and artificial star
+            plt.figure(figsize=(9, 7))
+            obs.plot_raw_diff()
+            plt.savefig(os.path.join(output_path, 'DR2_RawDiff'))
+            
+            plt.figure(figsize=(9, 7))
+            obs.plot_comps_lcs()
+            plt.savefig(os.path.join(output_path, 'DR2_CompStarLC'))
+
+            #Plot the psf model
+            obs.plot_psf_model()
+            plt.savefig(os.path.join(output_path, 'PSF_Model'))
+            plt.show()
+        except:
+            print('Problem with querying gaia... Using Broeg algorithm instead!')
+            obs.broeg2005()
+            obs.plot_summary()
+            plt.savefig(os.path.join(output_path, 'Broeg_Summary'))
+            obs.show_stars(size=5)
+            plt.savefig(os.path.join(output_path, 'Broeg_Stars'))
+
+            # Plot comparison stars and artificial star
+            plt.figure(figsize=(9, 7))
+            obs.plot_raw_diff()
+            plt.savefig(os.path.join(output_path, 'Broeg_RawDiff'))
+
+            plt.figure(figsize=(9, 7))
+            obs.plot_comps_lcs()
+            plt.savefig(os.path.join(output_path, 'Broeg_CompStarLC'))
+
+            #Plot the psf model
+            obs.plot_psf_model()
+            plt.savefig(os.path.join(output_path, 'PSF_Model'))
+            plt.show()
+
+    else: 
+        print('Using Broeg algorithm instead... Please wait')
         obs.broeg2005()
         obs.plot_summary()
         plt.savefig(os.path.join(output_path, 'Broeg_Summary'))
         obs.show_stars(size=5)
-        plt.savefig(os.path.join(output_path, 'Broeg_CompStars'))
-        #obs.plot_comps_lcs()
-        #plt.savefig(os.path.join(output_path, 'Broeg_CompStarLC'))
-        #obs.plot_precision()
-        #plt.savefig(os.path.join(output_path, 'Broeg_Precision'))
+        plt.savefig(os.path.join(output_path, 'Broeg_Stars'))
+
+        # Plot comparison stars and artificial star
+        plt.figure(figsize=(9, 7))
+        obs.plot_raw_diff()
+        plt.savefig(os.path.join(output_path, 'Broeg_RawDiff'))
+
+        plt.figure(figsize=(9, 7))
+        obs.plot_comps_lcs()
+        plt.savefig(os.path.join(output_path, 'Broeg_CompStarLC'))
+
+        #Plot the psf model
         obs.plot_psf_model()
         plt.savefig(os.path.join(output_path, 'PSF_Model'))
         plt.show()
-
-else: 
-    print('Using Broeg algorithm instead... Please wait')
-    obs.broeg2005()
-    obs.plot_summary()
-    plt.savefig(os.path.join(output_path, 'Broeg_Summary'))
-    obs.show_stars(size=5)
-    plt.savefig(os.path.join(output_path, 'Broeg_CompStars'))
-    #obs.plot_comps_lcs()
-    #plt.savefig(os.path.join(output_path, 'Broeg_CompStarLC'))
-    #obs.plot_precision()
-    #plt.savefig(os.path.join(output_path, 'Broeg_Precision'))
-    obs.plot_psf_model()
-    plt.savefig(os.path.join(output_path, 'PSF_Model'))
-    plt.show()
 
 # Save the results to a csv
 obs.to_csv(os.path.join(output_path, 'diffLC.csv'), sep=',')

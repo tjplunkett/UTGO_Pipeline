@@ -47,7 +47,9 @@ def find_comp_bycol(path2im, source_no):
     # Query Gaia 
     im = catalogs.GaiaCatalog(mode='crossmatch')(ref)
     im.show(stars=True)
-    gaia_table = im.catalogs['gaia'][['index','bp_rp','phot_bp_mean_mag','x','y']]
+    gaia_raw = im.catalogs['gaia'][['index','bp_rp','phot_bp_mean_mag','x','y', 'phot_variable_flag']]
+    gaia_table = gaia_raw[gaia_raw['phot_variable_flag'] != 'VARIABLE']
+    print('Flagged {:} stars as variable!'.format(len(gaia_raw) - len(gaia_table)))
     
     # Extract a table for the source, set variables
     source_table = gaia_table.iloc[[source_no]]
@@ -101,7 +103,15 @@ def find_comp_bycol2(ref, source_no):
     # Query Gaia 
     im = catalogs.GaiaCatalog(mode='crossmatch')(ref)
     im.show(stars=True)
-    gaia_table = im.catalogs['gaia'][['index','bp_rp','phot_bp_mean_mag','x','y']]
+    gaia_raw = im.catalogs['gaia'][['index','bp_rp','phot_bp_mean_mag','x','y', 'phot_variable_flag']]
+    x_min,x_max = min(gaia_raw['x']), max(gaia_raw['x'])
+    y_min,y_max = min(gaia_raw['y']), max(gaia_raw['y'])
+    gaia_table = gaia_raw[gaia_raw['phot_variable_flag'] != 'VARIABLE']
+    print('Flagged {:} stars as variable!'.format(len(gaia_raw) - len(gaia_table)))
+    gaia_table = gaia_table[gaia_table['x'] > x_min + 100]
+    gaia_table = gaia_table[gaia_table['x'] < x_max - 100]
+    gaia_table = gaia_table[gaia_table['y'] > y_min + 100]
+    gaia_table = gaia_table[gaia_table['y'] > y_min + 100]
     
     # Extract a table for the source, set variables
     source_table = gaia_table.iloc[[source_no]]
