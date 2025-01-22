@@ -75,7 +75,7 @@ def find_comp_bycol(path2im, source_no):
     
     return comp_index
 
-def find_comp_bycol2(ref, source_no):
+def find_comp_bycol2(ref, source_no, thresh):
     """
     A function to find Gaia stars that are closest in colour to the target. Works from
     reference image object, to be used within the diff phot script.
@@ -92,10 +92,8 @@ def find_comp_bycol2(ref, source_no):
     
     # Run source extraction
     calibration = Sequence([
-        blocks.SEDetection(threshold=3.0), # stars detection
-        blocks.Cutouts(),                   # making stars cutouts
-        blocks.MedianPSF(),                 # building PSF
-        blocks.psf.Moffat2D(),              # modeling PSF
+        blocks.detection.PointSourceDetection(threshold = thresh),  # stars detection
+        blocks.Cutouts(clean = False), # making stars cutouts
     ])
     
     calibration.run(ref, show_progress=True)
@@ -108,15 +106,26 @@ def find_comp_bycol2(ref, source_no):
     y_min,y_max = min(gaia_raw['y']), max(gaia_raw['y'])
     gaia_table = gaia_raw[gaia_raw['phot_variable_flag'] != 'VARIABLE']
     print('Flagged {:} stars as variable!'.format(len(gaia_raw) - len(gaia_table)))
-    gaia_table = gaia_table[gaia_table['x'] > x_min + 100]
-    gaia_table = gaia_table[gaia_table['x'] < x_max - 100]
-    gaia_table = gaia_table[gaia_table['y'] > y_min + 100]
-    gaia_table = gaia_table[gaia_table['y'] > y_min + 100]
-    
-    # Extract a table for the source, set variables
+
+    # Measure the source colour
     source_table = gaia_table.iloc[[source_no]]
     bp_rp = source_table['bp_rp'][source_no]
     bp = source_table['phot_bp_mean_mag'][source_no]
+    x_source = source_table['x'][source_no]
+    y_source = source_table['y'][source_no]
+
+    # Remove stars too close to the edge
+    #gaia_table = gaia_table[gaia_table['x'] < (x_source + 600)]
+    #gaia_table = gaia_table[gaia_table['x'] > (x_source - 600)]
+    #gaia_table = gaia_table[gaia_table['y'] < (y_source + 600)]
+    #gaia_table = gaia_table[gaia_table['y'] > (y_source - 600)]
+
+    gaia_table = gaia_table[gaia_table['x'] < (x_max - 250)]
+    gaia_table = gaia_table[gaia_table['x'] > (x_min + 250)]
+    gaia_table = gaia_table[gaia_table['y'] < (y_max - 250)]
+    gaia_table = gaia_table[gaia_table['y'] > (y_min + 250)]
+    print('Flagged {:} stars as too close to the edge!'.format(len(gaia_raw) - len(gaia_table)))
+    print(gaia_table)
    
     # Create absolute residuals for comparison
     gaia_table['col_res'] = abs(gaia_table['bp_rp']-bp_rp)

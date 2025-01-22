@@ -201,7 +201,7 @@ else:
     if input('Would you like to query Gaia to find comparison star? (y/n) ').lower() == 'y':
         try:
             print('Querying Gaia... This may take a moment')
-            comp_idx = query_gaia.find_comp_bycol2(best_im, target_no)
+            comp_idx = query_gaia.find_comp_bycol2(best_im, target_no, float(args.threshold))
             obs.diff(comp_idx)
 
             # Plot the summary and compstar choice
@@ -224,6 +224,7 @@ else:
             plt.savefig(os.path.join(output_path, 'PSF_Model'))
             plt.show()
         except:
+            raise
             print('Problem with querying gaia... Using Broeg algorithm instead!')
             obs.broeg2005()
             obs.plot_summary()
