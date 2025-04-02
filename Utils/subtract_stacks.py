@@ -69,7 +69,7 @@ def register_tiles(im_list, ref_im, verbose):
             try:
                 count = 1
                 registered_image, footprint = aa.register(masked_source, masked_ref,\
-                                                          detection_sigma = 10, max_control_points = 100)
+                                                          detection_sigma = 10, max_control_points = 200)
                 
                 # Divide image into 4 tiles to make computation faster and more robust
                 M = registered_image.shape[0]//2

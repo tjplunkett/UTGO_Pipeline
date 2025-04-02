@@ -56,7 +56,7 @@ def splitter(fm, freq):
             df = df.set_index('dt')
             months_df = [df[df.index.month == m] for m in df.index.month.unique()]
             for month in months_df:
-                days_df += [df[df.index.day == d] for d in df.index.day.unique()]
+                days_df = [df[df.index.day == d] for d in df.index.day.unique()]
                 for day in days_df:
                     df_list += [day[day.index.hour == h] for h in day.index.hour.unique()]
         else:
@@ -98,111 +98,113 @@ def remover(path2stacks):
         for asci in ascii_list:
             os.remove(asci)
 
-# Set up the parser
-parser = argparse.ArgumentParser(description='Reduce and stack images')
-parser.add_argument('path', help='The path to folder containing .fits files.')
-parser.add_argument('depth', type=int, help='How many sub folders to search, i.e if 0 will only access given directory.')
-parser.add_argument('method', type=str, help='Use SWarp? (type swarp)')
-parser.add_argument('period', type=str, help='Stack by hour or day? (hour/day)')
-args = parser.parse_args()
+if __name__ == '__main__':
+    
+    # Set up the parser
+    parser = argparse.ArgumentParser(description='Reduce and stack images')
+    parser.add_argument('path', help='The path to folder containing .fits files.')
+    parser.add_argument('depth', type=int, help='How many sub folders to search, i.e if 0 will only access given directory.')
+    parser.add_argument('method', type=str, help='Use SWarp? (type swarp)')
+    parser.add_argument('period', type=str, help='Stack by hour or day? (hour/day)')
+    args = parser.parse_args()
 
-# Safety and checks
-target_dir = os.path.abspath(args.path)
-if not os.path.isdir(target_dir):
-    print("This directory doesn't exist!")
-    raise SystemExit(1)
+    # Safety and checks
+    target_dir = os.path.abspath(args.path)
+    if not os.path.isdir(target_dir):
+        print("This directory doesn't exist!")
+        raise SystemExit(1)
 
-# Begin the action!
-remover(target_dir)
-fm = FitsManager(target_dir, depth=args.depth)
-print(fm)
-ref = Image(fm.all_images[0])
-objct = ref.header['OBJECT']
+    # Begin the action!
+    remover(target_dir)
+    fm = FitsManager(target_dir, depth=args.depth)
+    print(fm)
+    ref = Image(fm.all_images[0])
+    objct = ref.header['OBJECT']
 
-# Set our sigma clipper to +/- 3 st. devs
-sigma_clip = SigmaClip(sigma=3.0)
+    # Set our sigma clipper to +/- 3 st. devs
+    sigma_clip = SigmaClip(sigma=3.0)
 
-# Define 'calibration' sequence
-CalibFromRed = Sequence([
-    blocks.Trim(),
-    blocks.SegmentedPeaks(), # stars detection
-    blocks.Cutouts(),                   # making stars cutouts
-    blocks.MedianPSF(),                 # building PSF
-    blocks.psf.Moffat2D(),              # modeling PSF
-])
-   
-CalibFromRed.run(ref, show_progress=False)
+    # Define 'calibration' sequence
+    CalibFromRed = Sequence([
+        blocks.Trim(),
+        blocks.SegmentedPeaks(), # stars detection
+        blocks.Cutouts(),                   # making stars cutouts
+        blocks.MedianPSF(),                 # building PSF
+        blocks.psf.Moffat2D(),              # modeling PSF
+    ])
 
-default_stacker = Sequence([
-    *CalibFromRed[0:-1],                   # apply the same calibration to all images
-    blocks.psf.Moffat2D(reference=ref),   # providing a reference improves the PSF optimisation
-    blocks.Twirl(ref.stars_coords),       # compute image transformation
-    # Stack image
-    blocks.AffineTransform(stars=False, data=True),
-    blocks.MedianStack(name='stack'),
-])
-      
-# Start action    
-df_list = splitter(fm, str(args.period)) 
-exp_list = []
+    CalibFromRed.run(ref, show_progress=False)
 
-# Try use Swarp
-if args.method == 'swarp':
-    try:
+    default_stacker = Sequence([
+        *CalibFromRed[0:-1],                   # apply the same calibration to all images
+        blocks.psf.Moffat2D(reference=ref),   # providing a reference improves the PSF optimisation
+        blocks.Twirl(ref.stars_coords),       # compute image transformation
+        # Stack image
+        blocks.AffineTransform(stars=False, data=True),
+        blocks.MedianStack(name='stack'),
+    ])
+
+    # Start action    
+    df_list = splitter(fm, str(args.period)) 
+    exp_list = []
+
+    # Try use Swarp
+    if args.method == 'swarp':
+        try:
+            for df in df_list:
+                # Get exposure time and store for later
+                exp = df.exposure.unique()[0]
+                counter = exp_list.count(exp) + 1
+                bkg = []
+
+                # Define paths to pass to swarp, write these to ascii files for posterity
+                path_list = df.path.to_list()
+                list_file = str(objct+'_Stack_'+str(exp)+'s_'+str(counter)+'.ascii')
+                list_file = os.path.join(target_dir, list_file)
+                writer(path_list, list_file)
+
+                # Run swarp
+                command = 'SWarp @' + list_file + ' -c ' + swarp_file + ' -IMAGEOUT_NAME ' + list_file.replace('.ascii', '.fits') 
+                process = sub.Popen([command], shell=True)
+                process.wait()
+
+                if len(path_list) != 0:
+                    for im in path_list:
+                        img = Image(im)
+                        data = img.data
+                        sex_bkg = Background2D(data, (64, 64), filter_size=(5, 5), sigma_clip=sigma_clip, bkg_estimator=SExtractorBackground()) 
+                        bkg += [sex_bkg.background_median]
+
+                    med_bkg = np.median(bkg)
+
+                # Add constant bkg
+                if os.path.isfile(list_file.replace('.ascii', '.fits')):
+                    im_data = fits.getdata(list_file.replace('.ascii', '.fits'))
+                    stack_header = fits.getheader(list_file.replace('.ascii', '.fits'))
+                    stack_data = im_data + np.full_like(im_data, med_bkg)
+                    fits.writeto(list_file.replace('.ascii', '.fits'), data = stack_data, header = stack_header, overwrite = True)
+
+                exp_list += [exp]
+
+        except:
+            print('Unable to stack with SWarp! Check installation, or use default stack method')
+            raise SystemExit(1)
+
+    # Use default stacker from Prose
+    else:
         for df in df_list:
             # Get exposure time and store for later
             exp = df.exposure.unique()[0]
             counter = exp_list.count(exp) + 1
-            bkg = []
-            
-            # Define paths to pass to swarp, write these to ascii files for posterity
+
+            # Define paths to pass to swarp, write these to header for posterity
+            output_name = str(objct+'_Stack_'+str(exp)+'s_'+str(counter)+'.fits')
+            output_path = os.path.join(target_dir, output_name)
             path_list = df.path.to_list()
-            list_file = str(objct+'_Stack_'+str(exp)+'s_'+str(counter)+'.ascii')
-            list_file = os.path.join(target_dir, list_file)
-            writer(path_list, list_file)
-            
-            # Run swarp
-            command = 'SWarp @' + list_file + ' -c ' + swarp_file + ' -IMAGEOUT_NAME ' + list_file.replace('.ascii', '.fits') 
-            process = sub.Popen([command], shell=True)
-            process.wait()
+            writer(path_list, output_path.replace('.fits', '.ascii'))
+            default_stacker.run(path_list)
+            default_stacker.stack.stack.header = Image(path_list[0]).header
+            default_stacker.stack.stack.header['COMMENT'] = 'Created with stacker.py using default method.'
+            default_stacker.stack.stack.writeto(output_path)
 
-            if len(path_list) != 0:
-                for im in path_list:
-                    img = Image(im)
-                    data = img.data
-                    sex_bkg = Background2D(data, (64, 64), filter_size=(5, 5), sigma_clip=sigma_clip, bkg_estimator=SExtractorBackground()) 
-                    bkg += [sex_bkg.background_median]
-                    
-                med_bkg = np.median(bkg)
-
-            # Add constant bkg
-            if os.path.isfile(list_file.replace('.ascii', '.fits')):
-                im_data = fits.getdata(list_file.replace('.ascii', '.fits'))
-                stack_header = fits.getheader(list_file.replace('.ascii', '.fits'))
-                stack_data = im_data + np.full_like(im_data, med_bkg)
-                fits.writeto(list_file.replace('.ascii', '.fits'), data = stack_data, header = stack_header, overwrite = True)
-            
             exp_list += [exp]
-            
-    except:
-        print('Unable to stack with SWarp! Check installation, or use default stack method')
-        raise SystemExit(1)
-
-# Use default stacker from Prose
-else:
-    for df in df_list:
-        # Get exposure time and store for later
-        exp = df.exposure.unique()[0]
-        counter = exp_list.count(exp) + 1
-        
-        # Define paths to pass to swarp, write these to header for posterity
-        output_name = str(objct+'_Stack_'+str(exp)+'s_'+str(counter)+'.fits')
-        output_path = os.path.join(target_dir, output_name)
-        path_list = df.path.to_list()
-        writer(path_list, output_path.replace('.fits', '.ascii'))
-        default_stacker.run(path_list)
-        default_stacker.stack.stack.header = Image(path_list[0]).header
-        default_stacker.stack.stack.header['COMMENT'] = 'Created with stacker.py using default method.'
-        default_stacker.stack.stack.writeto(output_path)
-        
-        exp_list += [exp]
