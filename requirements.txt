@@ -8,3 +8,4 @@ photutils==1.8.0
 prose==2.3.0
 scipy==1.10.1
 ccdproc==2.4.1
+ois==0.2

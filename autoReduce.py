@@ -14,6 +14,7 @@ run 'on the fly' in order to reduce data quickly during observations.
 # Import necessary packages
 from prose import Image, Sequence, blocks, FitsManager, Observation
 from astropy.io import fits
+from Utils.stacker import *
 from Utils.pytrimmer import *
 from Utils.nightly_summary import *
 import numpy as np
@@ -24,6 +25,7 @@ import os
 from datetime import datetime 
 import shutil
 import subprocess
+from astropy.time import Time
 
 # Set up the parser
 parser = argparse.ArgumentParser(description='Perform automatic reduction on images')
@@ -353,7 +355,11 @@ for pth in dim_arr:
                 for re in fits_list:
                     fits.setval(re, 'IMAGETYP', value='Light')
                     fits.setval(re, 'SWCREATE', value = '')
+                    
                     hdu = fits.open(re)[0]
+                    jd = Time(hdu.header['DATE-OBS'], format='isot', scale='utc').jd
+                    fits.setval(re, 'JD', value=float(jd))
+                    
                     if 'HISTORY' not in hdu.header:
                         fits.setval(re, 'HISTORY', value=comment_str)
                     ob = hdu.header['OBJECT']
@@ -435,8 +441,25 @@ if args.on_the_fly == 'n' or args.on_the_fly == 'N':
                                     stack_im = make_stack(obj_fltr_fldr, o, best_imgs, bkg, date_str.replace('/',''))
                                     run_sex(stack_im, ap, os.path.join(obj_fltr_fldr, 'Nightly_Summaries'))
                                     fits.setval(stack_im, keyword='APER_RAD', value=float(ap))
+
+                                    # Add requested hourly stacks of MultiMess targets
+                                    for name in multimess_names:
+                                        if name in o:
+                                            fm_fltr = FitsManager(obj_fltr_fldr, depth = 0)
+                                            df_list = splitter(fm_fltr, 'hour')
+                                            exp_list = []
+                                            for df in df_list:
+                                                sub_path_list = df.path.to_list()
+                                                exp = df.exposure.unique()[0]
+                                                counter = exp_list.count(exp) + 1
+                                                stack_id = str(date_str.replace('/','') + '_{:}_{:}'.format(counter,exp)) 
+                                                sub_stack = make_stack(obj_fltr_fldr, o, sub_path_list, bkg, stack_id)
+                                                run_sex(sub_stack, ap, os.path.join(obj_fltr_fldr, 'Nightly_Summaries'))
+                                                fits.setval(sub_stack, keyword='APER_RAD', value=float(ap))
+                                                exp_list += [exp]
+                                                        
                                 except:
-                                    raise
+                                    #raise
                                     print('\n\n UNABLE TO PRODUCE SUMMARY FOR {:} IN {:} ON NIGHT: {:}... MOVING ON!'.format(o,fltr, date_str))
                             else:
                                 print('\n\n NOT ENOUGH IMAGES! ABORTING SUMMARY FOR {:} IN {:} ON NIGHT: {:}... MOVING ON!'.format(o,fltr, date_str))
@@ -450,7 +473,24 @@ if args.on_the_fly == 'n' or args.on_the_fly == 'N':
                                 stack_im = make_stack(obj_fltr_fldr, o, best_imgs, bkg, date_str.replace('/',''))
                                 run_sex(stack_im, ap, os.path.join(obj_fltr_fldr, 'Nightly_Summaries'))
                                 fits.setval(stack_im, keyword='APER_RAD', value=float(ap))
+
+                                # Add requested hourly stacks of MultiMess targets
+                                for name in multimess_names:
+                                    if name in o:
+                                        fm_fltr = FitsManager(obj_fltr_fldr, depth = 0)
+                                        df_list = splitter(fm_fltr, 'hour')
+                                        exp_list = []
+                                        for df in df_list:
+                                            sub_path_list = df.path.to_list()
+                                            exp = df.exposure.unique()[0]
+                                            counter = exp_list.count(exp) + 1
+                                            stack_id = str(date_str.replace('/','') + '_{:}_{:}'.format(counter,exp)) 
+                                            sub_stack = make_stack(obj_fltr_fldr, o, sub_path_list, bkg, stack_id)
+                                            run_sex(sub_stack, ap, os.path.join(obj_fltr_fldr, 'Nightly_Summaries'))
+                                            fits.setval(sub_stack, keyword='APER_RAD', value=float(ap))
+                                            exp_list += [exp]
                             except:
+                                #raise
                                 print('\n\n UNABLE TO PRODUCE SUMMARY FOR {:} IN {:} ON NIGHT: {:}... MOVING ON!'.format(o,fltr, date_str))
                         else:
                             print('\n\n NOT ENOUGH IMAGES! ABORTING SUMMARY FOR {:} IN {:} ON NIGHT: {:}... MOVING ON!'.format(o,fltr, date_str))
