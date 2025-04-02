@@ -98,11 +98,12 @@ def make_stack(target_dir, best_df, best_im):
     Path to the reference frame file
     """
     data = []
+    print(best_df)
     best_im = os.path.join(target_dir, os.path.basename(best_im))
     # If you want a stack, then we will use a simple median
     if len(best_df) > 0 and len(best_df) > 5:
         best_files = best_df['File'][0:5]
-    if len(best_df) > 0 and len(best_df) < 5:
+    if len(best_df) > 0 and len(best_df) <= 5:
         best_files = best_df['File']
         
     for im in best_files:
@@ -172,7 +173,7 @@ def create_subplots(target_dir, norm_ims, diff_ims, positions, ap):
                 ax[1,j].imshow(diff, norm = n1, cmap = 'inferno')
                 ax[1,j].set_xlim(250 - 19, 250 + 19)
                 ax[1,j].set_ylim(250 - 19, 250 + 19)
-                ax[1,j].add_artist(plt.Circle(positions[0], 5.0, color='cyan', fill=False, alpha = 1))
+                ax[1,j].add_artist(plt.Circle(positions[0], ap, color='cyan', fill=False, alpha = 1))
 
                 j = j + 1
                 break
@@ -244,7 +245,7 @@ def register_ims_aa(im_list, ref_im, x,y, verbose):
         if im != ref_im:
             try:
                 registered_image, footprint = aa.register(masked_source, masked_ref,\
-                                                          detection_sigma = 10, max_control_points = 100)
+                                                          detection_sigma = 10, max_control_points = 200)
                 
                 registered_image = registered_image[(y_int - 250): (y_int + 250), (x_int - 250): (x_int + 250)]
                 new_im = os.path.join(dia_dir, os.path.basename(im).replace('.fits', '_reg.fits'))
@@ -292,10 +293,13 @@ def perform_sub(reg_list, ref_im, x,y):
             im_mask = ndimage.binary_dilation(im_mask, iterations=10)
             background = sep.Background(im_data, mask = im_mask, bw = 100, bh = 100, fw = 10, fh = 10).back()
             masked_im = np.ma.masked_array(im_data - background, im_mask)
-            im_fwhm = fits.getval(im, 'FWHM')
-            
-            fwhm_diff = abs(float(im_fwhm) - float(ref_fwhm))
-            kern_size = int(((np.ceil(4*fwhm_diff)//2)*2)+1)
+            try:
+                im_fwhm = fits.getval(im, 'FWHM')
+                fwhm_diff = abs(float(im_fwhm) - float(ref_fwhm))
+                kern_size = int(((np.ceil(4*fwhm_diff)//2)*2)+1)
+            except:
+                kern_size = 13
+                
             if kern_size < 7:
                 kern_size = 7
             if kern_size > 13:
@@ -338,7 +342,7 @@ def source_extract(ref_im, target_dir):
     blocks.MedianPSF(),                 # building PSF
     blocks.psf.Moffat2D(),              # modeling PSF
     blocks.BalletCentroid(),  
-    blocks.PhotutilsAperturePhotometry(apertures = np.array([1.5]), r_in = 2, r_out = 3, scale=True), # aperture photometry
+    blocks.PhotutilsAperturePhotometry(apertures = np.array([1.25]), r_in = 2, r_out = 3, scale=True), # aperture photometry
     blocks.Peaks(),
     data,
     ])
@@ -347,7 +351,7 @@ def source_extract(ref_im, target_dir):
     ref = Image(ref_im)
     phot.run(ref)
     fits.setval(ref_im, keyword = 'FWHM', value = float(ref.fwhm))
-    ap = 1.5*float(ref.fwhm)
+    ap = 1.25*float(ref.fwhm)
     
     # Make a dataframe for the source catolog
     sky = np.array(data.sky[0])
@@ -439,8 +443,11 @@ def target_photometry(target_dir, diff_ims, ref_im, x,y, ap):
     for diff in diff_ims:
         scale_factor = float(fits.getval(diff, 'SclFac'))
         data = fits.getdata(diff).astype(float)
-        date_obs = fits.getval(diff, 'DATE-OBS') 
-        fwhm = fits.getval(diff, 'FWHM')
+        date_obs = fits.getval(diff, 'DATE-OBS')
+        try:
+            fwhm = fits.getval(diff, 'FWHM')
+        except:
+            fwhm = np.nan
         exp = fits.getval(diff, 'EXPTIME')
         
         # Do photometry! Suited to 50cm with rn = ... and g = 1.8
@@ -463,10 +470,10 @@ def target_photometry(target_dir, diff_ims, ref_im, x,y, ap):
 if __name__ == '__main__':
     # ---------------------- Part 1 - SETUP ---------------------------------------------------------
      # Hacky shit to stop warnings on mac
-    try:
-        mp.set_start_method('fork', force=True)
-    except RuntimeError:
-        pass
+    #try:
+       # mp.set_start_method('fork', force=True)
+   # except RuntimeError:
+       # pass
     
     # Set up the parser
     parser = argparse.ArgumentParser(description='Perform DIA analysis on images in folder')
@@ -500,8 +507,8 @@ if __name__ == '__main__':
         # Initiate the pools for multiprocessing
         n_proc = mp.cpu_count()
         print('The number of CPUs is {:}'.format(n_proc))
-        p = Pool(int(n_proc - 2))
-        q = Pool(int(n_proc - 2))
+        p = Pool(int(n_proc/2))
+        q = Pool(int(n_proc/2))
 
         # Remove old files if desired
         old_list = glob.glob(os.path.join(target_dir, '*reg*.fits')) + glob.glob(os.path.join(dia_dir, '*reg*.fits'))
