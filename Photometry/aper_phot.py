@@ -127,7 +127,6 @@ if os.path.isdir(night_sum):
         ref.show()
         plt.show()
     except:
-        raise
         print('No nightly summary found... Continuing manual search for best image...')
 else:  
     try:
