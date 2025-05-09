@@ -54,15 +54,28 @@ for dirt in dir_list:
         for file in file_list:
             if ' ' in str(file):
                 os.rename(file, str(file).replace(' ','_'))
+
+        target_dir = str(os.path.join(path2yr, dirt))
+        calib_dataset = 'Calibrations_'+dirt
+        raw_dataset = 'Observations_'+dirt
+
+        # Upload raw and calibration data
+        cmd1 = 'python /home/obs/UTGO_Pipeline/uploader.py ' + target_dir + ' raw ' + raw_dataset + ' y y'
+        process = subprocess.Popen([cmd1], shell=True)
+        process.wait()
+
+        cmd2 = 'python /home/obs/UTGO_Pipeline/uploader.py ' + target_dir + ' calib ' + calib_dataset + ' y y'
+        process = subprocess.Popen([cmd2], shell=True)
+        process.wait()
         
         # Extract any calibration frames 
-        cmd1 = 'python /home/obs/UTGO_Pipeline/update_calibs.py ' + str(os.path.join(path2yr, dirt)) + ' n'
-        process = subprocess.Popen([cmd1], shell=True)
+        cmd3 = 'python /home/obs/UTGO_Pipeline/update_calibs.py ' + str(os.path.join(path2yr, dirt)) + ' n'
+        process = subprocess.Popen([cmd3], shell=True)
         process.wait()
         
         # Auto reduction
-        cmd2 = 'python /home/obs/UTGO_Pipeline/autoReduce.py ' + str(os.path.join(path2yr, dirt)) + ' n n'
-        process = subprocess.Popen([cmd2], shell=True)
+        cmd4 = 'python /home/obs/UTGO_Pipeline/autoReduce.py ' + str(os.path.join(path2yr, dirt)) + ' n n'
+        process = subprocess.Popen([cmd4], shell=True)
         process.wait()
         
 # Write new folders into the text file 

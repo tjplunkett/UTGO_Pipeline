@@ -501,7 +501,6 @@ if args.on_the_fly == 'n' or args.on_the_fly == 'N':
                     new_proc_df = pd.DataFrame({'Files': proc_files})
                     new_proc_df.to_csv(os.path.join(obj_fltr_fldr, 'proc_files.csv'))
 
-                    #upload_cmd = 'python /home/obs/UTGO_Pipeline/uploader.py ' + str(obj_fltr_fldr) + ' ' + os.path.basename(final_dir) + ' y n'
                     upload_cmd = 'python /home/obs/UTGO_Pipeline/uploader.py ' + str(obj_fltr_fldr) + ' ' + str(o) + ' y n'
                     try:
                         upload_process = subprocess.Popen([upload_cmd], shell = True)
