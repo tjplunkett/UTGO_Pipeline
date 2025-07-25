@@ -83,7 +83,7 @@ def find_ref(target_dir, norm_ims):
     
     return best_im, best_df 
 
-def make_stack(target_dir, best_df, best_im): 
+def make_stack(target_dir, best_df, best_im, n_ims): 
     """ 
     Finds the best reference image (or images) to use
     
@@ -101,9 +101,9 @@ def make_stack(target_dir, best_df, best_im):
     print(best_df)
     best_im = os.path.join(target_dir, os.path.basename(best_im))
     # If you want a stack, then we will use a simple median
-    if len(best_df) > 0 and len(best_df) > 5:
-        best_files = best_df['File'][0:5]
-    if len(best_df) > 0 and len(best_df) <= 5:
+    if len(best_df) > 0 and len(best_df) > n_ims:
+        best_files = best_df['File'][0:int(n_ims)]
+    if len(best_df) > 0 and len(best_df) <= n_ims:
         best_files = best_df['File']
         
     for im in best_files:
@@ -112,7 +112,7 @@ def make_stack(target_dir, best_df, best_im):
     
     master_data = np.median(data, axis=0)
     master_header = fits.getheader(best_im.replace('.fits','_reg.fits'))
-    master_header['Stack'] = "Median stack of 5 images: {:}".format(best_files.to_list())
+    master_header['Stack'] = "Median stack of {:} images: {:}".format(n_ims, best_files.to_list())
     fits.writeto(os.path.join(target_dir, 'ref.fits'), master_data, master_header, overwrite = True)
     
     return os.path.join(target_dir, 'ref.fits')
@@ -167,12 +167,16 @@ def create_subplots(target_dir, norm_ims, diff_ims, positions, ap):
 
                 ax[0,j].set_title(date_obs)
                 ax[0,j].imshow(norm, norm = n2, cmap = 'inferno')
-                ax[0,j].set_xlim(250 - 19, 250 + 19)
-                ax[0,j].set_ylim(250 - 19, 250 + 19)
+                ax[0,j].set_xlim(positions[0][0] - 19, positions[0][0] + 19)
+                ax[0,j].set_xticks(np.arange(positions[0][0] - 19, positions[0][0] + 19, 10))
+                ax[0,j].set_ylim(positions[0][1] - 19, positions[0][1] + 19)
+                ax[0,j].set_yticks(np.arange(positions[0][1] - 19, positions[0][1] + 19, 10))
 
                 ax[1,j].imshow(diff, norm = n1, cmap = 'inferno')
-                ax[1,j].set_xlim(250 - 19, 250 + 19)
-                ax[1,j].set_ylim(250 - 19, 250 + 19)
+                ax[1,j].set_xlim(positions[0][0] - 19, positions[0][0] + 19)
+                ax[1,j].set_xticks(np.arange(positions[0][0] - 19, positions[0][0] + 19, 10))
+                ax[1,j].set_ylim(positions[0][1] - 19, positions[0][1] + 19)
+                ax[1,j].set_yticks(np.arange(positions[0][1] - 19, positions[0][1] + 19, 10))
                 ax[1,j].add_artist(plt.Circle(positions[0], ap, color='cyan', fill=False, alpha = 1))
 
                 j = j + 1
@@ -323,8 +327,8 @@ def perform_sub(reg_list, ref_im, x,y):
             # Mask bad pixels and save!
             diff_image.data[diff_image.mask] = 0
             fits.writeto(str(im).replace('.fits', '_diff.fits'), diff_image.data, im_header)
-            fits.writeto(str(im).replace('.fits', '_kernel.fits'), source_kernel)
-            fits.writeto(str(im).replace('.fits', '_bkg.fits'), background)
+            fits.writeto(str(im).replace('.fits', '_kernel.fits'), source_kernel, im_header)
+            fits.writeto(str(im).replace('.fits', '_bkg.fits'), background, im_header)
             
 def source_extract(ref_im, target_dir):
     """
@@ -375,7 +379,7 @@ def source_extract(ref_im, target_dir):
     
     return ap
     
-def refine_pos(diff_ims):
+def refine_pos(diff_ims, x,y):
     """
     Function to refine the position of the object in a simple way
     
@@ -392,7 +396,7 @@ def refine_pos(diff_ims):
         if i > 0:
             s = s + abs(diff)
         
-    pos_new = centroid_sources(s, 250, 250, box_size = 9, centroid_func=centroid_com)
+    pos_new = centroid_sources(s, float(x), float(y), box_size = 9, centroid_func=centroid_com)
     pos_new = [(pos_new[0][0], pos_new[1][0])]
     
     print('New centroid at: {:}'.format(pos_new))
@@ -415,7 +419,7 @@ def target_photometry(target_dir, diff_ims, ref_im, x,y, ap):
     # Function to perform the aperture photometry on diff images
     master_df = pd.DataFrame()
     try:
-        positions = refine_pos(diff_ims)
+        positions = refine_pos(diff_ims, x,y)
     except:
         positions = [(x,y)]
     
@@ -480,7 +484,7 @@ if __name__ == '__main__':
     parser.add_argument('Path', help='The path to folder containing .fits files.')
     parser.add_argument('Visual', type=str, help='Visually choose object? (y/n)')
     parser.add_argument('AutoRef', type=str, help='Find the best reference automatically? (y/n)')
-    parser.add_argument('Stack', type=str, help='Stack the best frames? (y/n)')
+    parser.add_argument('Stack', type=str, help='Stack the best frames? If integer, will stack that amount of frames. (int or n/N)')
     parser.add_argument('Redo', type=str, help='Redo subtraction? (y/n)')
     parser.add_argument('Verbose', type=str, help='Want to know whats happening? (y/n)')
     pargs = parser.parse_args()
@@ -552,8 +556,8 @@ if __name__ == '__main__':
         p.starmap(register_ims_aa, args)
         p.close()
 
-        if pargs.Stack == 'y' or pargs.Stack == 'Y' or pargs.Stack == 'Yes':
-            ref_im = make_stack(dia_dir, best_df, best_im)
+        if str(pargs.Stack).isdigit():
+            ref_im = make_stack(dia_dir, best_df, best_im, int(pargs.Stack))
         else:
             ref_im = os.path.join(dia_dir, os.path.basename(best_im).replace('.fits','_reg.fits'))
 
@@ -568,6 +572,9 @@ if __name__ == '__main__':
 
         q.starmap(perform_sub, args2)
         q.terminate()
+
+        # Set it to be the centre of new images, i.e im.shape/2
+        x,y = 250,250
     
     # ---------------------- Part 3 - Photometry  ---------------------------------------------------------
     else:
@@ -581,16 +588,16 @@ if __name__ == '__main__':
             im_list = glob.glob(os.path.join(target_dir, '*_reduced.fits'))
             best_im, best_df = find_ref(target_dir, im_list)
         
-        if pargs.Stack == 'y' or pargs.Stack == 'Y' or pargs.Stack == 'Yes':
+        if str(pargs.Stack).isdigit():
             ref_im = os.path.join(dia_dir, 'ref.fits')
         else:
             ref_im = os.path.join(dia_dir, os.path.basename(best_im).replace('.fits','_reg.fits'))
         
-        x,y = 250,250
+        x,y = input('Please enter target position on reference (e.g, 127,125): ').split(',')
         ap = source_extract(ref_im, target_dir)
     
     print('Performing photometry. Please wait... \n')
     diff_list = glob.glob(os.path.join(dia_dir, '*diff.fits'))
-    pos = target_photometry(dia_dir, diff_list, ref_im, x, y, ap)
+    pos = target_photometry(dia_dir, diff_list, ref_im, float(x), float(y), ap)
     create_subplots(dia_dir, reg_list, diff_list, pos, ap)
     print('Done!')
