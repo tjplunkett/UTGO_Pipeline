@@ -13,15 +13,20 @@ and photometry catalogue from this stacked image.
 
 """
 # Import necessary packages
+import os
+import sys
 import pandas as pd
 import numpy as np
-import os
 from prose import Image, Sequence, blocks, FitsManager, Observation
 import subprocess as sub
 from photutils.background import Background2D, SExtractorBackground
-from astropy.stats import SigmaClip
-from Photometry.calibrate_phot import *
 from astropy.io import fits
+from datetime import timedelta
+from astropy.time import Time
+
+# Hacky shit to make directly callable
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from Photometry.calibrate_phot import *
 
 def writer(lst, title):
     """
@@ -89,6 +94,8 @@ def make_summary(target_dir, file_list, date):
     """
     # Initialise lists to contain info
     bkg = []
+    jd = []
+    airmass = []
     good_ims = []
     best_ims = []
     n_stars = []
@@ -119,6 +126,8 @@ def make_summary(target_dir, file_list, date):
 
     # Get object
     obj = fits.getval(file_list[0], 'OBJECT')
+    obj = obj.replace('/','_')
+    obj = obj.replace(' ', '_')
     
     # Loop through the images, test if they are good and then grab stats
     if len(file_list) != 0:
@@ -143,6 +152,13 @@ def make_summary(target_dir, file_list, date):
                 data = img.data
                 hdr = img.header
                 exp = float(hdr['EXPTIME'])
+                
+                try:
+                    jd += [float(hdr['JD'])]
+                except:
+                    jd += [Time(hdr['DATE-OBS'], format='isot', scale='utc').jd]
+                    
+                airmass += [float(hdr['AIRMASS'])]
                 sex_bkg = Background2D(data, (64, 64), filter_size=(9, 9), sigma_clip=sigma_clip, bkg_estimator=SExtractorBackground(), exclude_percentile = 25.0)   
                 bkg += [sex_bkg.background_median/exp]
         
@@ -167,7 +183,7 @@ def make_summary(target_dir, file_list, date):
             n_stars = []
         
         # Create dataframe and write to .CSV
-        summary_df = pd.DataFrame({'File': good_ims, 'N_stars': n_stars, 'FWHM [pix]': fwhm_data.fwhm, 'Bkg [adu/s]': bkg})
+        summary_df = pd.DataFrame({'File': good_ims,'JD': jd, 'N_stars': n_stars, 'FWHM [pix]': fwhm_data.fwhm, 'Bkg [adu/s]': bkg, 'Airmass': airmass})
         summary_df = summary_df.round(3)
         summary_df.to_csv(os.path.join(os.path.join(target_dir, 'Nightly_Summaries'), 'Summary_H50_{:}_{:}.csv'.format(obj, date)))
                       
@@ -201,3 +217,45 @@ def run_sex(stack_image, ap_size, output_path):
     #Save file 
     file_name = str(os.path.basename(stack_image).replace('.fits','')+'_phot.csv')
     final_df.to_csv(os.path.join(output_path, file_name))
+
+if __name__ == '__main__':
+    
+    # Set up the parser
+    parser = argparse.ArgumentParser(description='Create nightly summary files')
+    parser.add_argument('path', help='The path to folder containing .fits files.')
+    parser.add_argument('date', type=str, help='The date of observations to produce files for. Type (i.e): 20250219 or all')
+    args = parser.parse_args()
+
+    # Safety and checks
+    target_dir = os.path.abspath(args.path)
+    if not os.path.isdir(target_dir):
+        print("This directory doesn't exist!")
+        raise SystemExit(1)
+
+    # Begin the action!
+    fm = FitsManager(target_dir, depth = 0)
+    obs_df = fm.files(path = True)
+    
+    # To get the dates that are consistent with our naming convention (local times) need to some wizardry with time deltas
+    date_list = obs_df.date.unique()
+    
+    if str(args.date) == 'all':
+        # Iterate through all unique nights of observing, figure out the real date (local time) and run summary production
+        for date in date_list:
+            print('Working on night: {:}'.format(date))
+            obs_sub = obs_df[obs_df.date == date]
+            file_sub = obs_sub.path.to_numpy()
+            real_date = (pd.to_datetime(date) + timedelta(1)).strftime('%d%m%Y')
+            make_summary(target_dir, file_sub, real_date)
+
+    else:
+        # Match the input date with the 'fake' dates from Prose, then create a subset of files to pass to the nightly summary function
+        real_date = pd.to_datetime(args.date).strftime('%d%m%Y')
+        fake_date = pd.to_datetime(str(args.date)) - timedelta(1)
+        fake_date_str = fake_date.strftime('%Y-%m-%d')
+        obs_sub = obs_df[obs_df.date == fake_date_str]
+        file_sub = obs_sub.path.to_numpy()
+        make_summary(target_dir, file_sub, real_date)
+
+    print('Nightly summaries have been produced!')
+            
