@@ -117,8 +117,8 @@ def make_summary(target_dir, file_list, date):
     ])
     
     PSF = Sequence([
-        blocks.detection.PointSourceDetection(n=20),  # stars detection
-        blocks.Cutouts(), # making stars cutouts
+        blocks.detection.PointSourceDetection(n=10),  # stars detection
+        blocks.Cutouts(clean = True), # making stars cutouts
         blocks.MedianPSF(),            # building PSF
         blocks.psf.Moffat2D(),     # modeling PSF
         fwhm_data,
@@ -128,6 +128,7 @@ def make_summary(target_dir, file_list, date):
     obj = fits.getval(file_list[0], 'OBJECT')
     obj = obj.replace('/','_')
     obj = obj.replace(' ', '_')
+
     
     # Loop through the images, test if they are good and then grab stats
     if len(file_list) != 0:
@@ -210,8 +211,8 @@ def run_sex(stack_image, ap_size, output_path):
     process.wait()
                 
     # Calibrate to GAIA
-    df = read_sex(cat_path)
-    final_df = calibrate_phot(stack_image, df, fltr, output_path)
+    df = read_sex(cat_path, stack_image)
+    final_df = calibrate_phot(stack_image, df, fltr, output_path, True)
     final_df = final_df.round(4)
                               
     #Save file 
@@ -224,6 +225,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Create nightly summary files')
     parser.add_argument('path', help='The path to folder containing .fits files.')
     parser.add_argument('date', type=str, help='The date of observations to produce files for. Type (i.e): 20250219 or all')
+    parser.add_argument('stacks',type=str, help='Do you want to recreate the stacks and photometry? (y/n)')
     args = parser.parse_args()
 
     # Safety and checks
@@ -231,6 +233,8 @@ if __name__ == '__main__':
     if not os.path.isdir(target_dir):
         print("This directory doesn't exist!")
         raise SystemExit(1)
+
+    outpath = os.path.join(target_dir, 'Nightly_Summaries')
 
     # Begin the action!
     fm = FitsManager(target_dir, depth = 0)
@@ -242,11 +246,24 @@ if __name__ == '__main__':
     if str(args.date) == 'all':
         # Iterate through all unique nights of observing, figure out the real date (local time) and run summary production
         for date in date_list:
-            print('Working on night: {:}'.format(date))
+            real_date = (pd.to_datetime(date) + timedelta(1)).strftime('%d%m%Y')
+            print('Working on night: {:}'.format(real_date))
             obs_sub = obs_df[obs_df.date == date]
             file_sub = obs_sub.path.to_numpy()
-            real_date = (pd.to_datetime(date) + timedelta(1)).strftime('%d%m%Y')
-            make_summary(target_dir, file_sub, real_date)
+            best_imgs, ap, bkg = make_summary(target_dir, file_sub, real_date)
+            o = fits.getval(best_imgs[0],'OBJECT')
+
+            if args.stacks == 'y' or args.stacks == 'Y':
+                if len(best_imgs) > 1 and ap != 0.0 and bkg != 0:
+                    try:
+                        stack_im = make_stack(target_dir, o, best_imgs, bkg, real_date)
+                        run_sex(stack_im, ap, os.path.join(target_dir, 'Nightly_Summaries'))
+                        fits.setval(stack_im, keyword='APER_RAD', value=float(ap))
+                    except:
+                        raise
+                        print('Unable to make stack for night {:} \n'.format(real_date))
+                else:
+                    print('Not enough images to stack on night {:} \n'.format(real_date))
 
     else:
         # Match the input date with the 'fake' dates from Prose, then create a subset of files to pass to the nightly summary function
@@ -255,7 +272,18 @@ if __name__ == '__main__':
         fake_date_str = fake_date.strftime('%Y-%m-%d')
         obs_sub = obs_df[obs_df.date == fake_date_str]
         file_sub = obs_sub.path.to_numpy()
-        make_summary(target_dir, file_sub, real_date)
+        best_imgs, ap, bkg = make_summary(target_dir, file_sub, real_date)
+        o = fits.getval(best_imgs[0],'OBJECT')
+
+        if args.stacks == 'y' or args.stacks == 'Y':
+                if len(best_imgs) > 1 and ap != 0.0 and bkg != 0:
+                    try:
+                        stack_im = make_stack(target_dir, o, best_imgs, bkg, real_date)
+                        run_sex(stack_im, ap, os.path.join(target_dir, 'Nightly_Summaries'))
+                    except:
+                        print('Unable to make stack for night {:} \n'.format(real_date))
+                else:
+                    print('Not enough images to stack on night {:} \n'.format(real_date))
 
     print('Nightly summaries have been produced!')
             
