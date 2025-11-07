@@ -23,11 +23,6 @@ import glob
 gain = 1.28 # e-/ADU
 rn = 7.10 # e-
 D = 0.12 # e/pix/sec
-ki, ki_er = 0.18, 0.02
-kr, kr_er = 0.20, 0.02
-kg, kg_er = 0.32, 0.01
-kV, kV_er = 0.24, 0.01
-kB, kB_er = 0.43, 0.01
 ZP_ar = []
 ZP_er_ar = []
 
@@ -35,22 +30,35 @@ ZP_er_ar = []
 def get_zeropoint(impath, ap_size):
     """
     A function to obtain the zeropoints for the images. If not already in header,
-    must call source extraction process 
+    must call source extraction process. Will also call function if the aperture used 
+    for extraction differs by more than 0.1 pixels.
     """
     im = Image(impath)
     im_dir = os.path.dirname(impath)
+
+    # Check for existing zeropoint. If extracted with aperture less than 0.1 from
+    # requested value, use this zeropoint. Otherwise, we need to rederive the values
     try:
-        zp = float(im.header['MAG_ZP'])
-        zp_er = float(im.header['ZP_ER'])
+        if abs(float(im.header['APER_RAD']) - float(ap_size)) < 0.1:
+            zp = float(im.header['MAG_ZP'])
+            zp_er = float(im.header['ZP_ER'])
+        else:
+            print('Old zeropoint using a different radius found... Rederiving zeropoint!')
+            command = 'python pseudosex.py ' + im_dir + ' 0 ' + str(ap_size) + ' y n'
+            process = sub.Popen([command], shell=True)
+            process.wait()
+
+            zp = float(im.header['MAG_ZP'])
+            zp_er = float(im.header['ZP_ER'])
     except:
         try:
-            command = 'python pseudosex.py ' + im_dir + ' 0 ' + str(ap_size) + ' y y'
+            command = 'python pseudosex.py ' + im_dir + ' 0 ' + str(ap_size) + ' y n'
             process = sub.Popen([command], shell=True)
             process.wait()
         except:
             # If there are issues with source extractor, use default Prose but warn
             print('WARNING! Source Extractor issue detected! Defaulting to Prose photometry...')
-            command = 'python pseudosex.py ' + im_dir + ' 0 ' + str(ap_size) + ' n y'
+            command = 'python pseudosex.py ' + im_dir + ' 0 ' + str(ap_size) + ' n n'
             process = sub.Popen([command], shell=True)
             process.wait()
         
@@ -61,125 +69,152 @@ def get_zeropoint(impath, ap_size):
         
     return zp, zp_er
 
-def get_ext_coeffs(filtr):
+def plot_lc(phot_df, fltr, ap, target_dir, phot_type):
     """
-    Returns the approximate extinction coeff. given a filter for the 50cm
-    
-    params: 
-    filtr - The filter of observation (str)
-    
-    return:
-    zp - The magnitude zeropoint
-    zp_er - The error on the zeropoint 
-    k - The airmass extinction coeff.
-    k_er - The error on the extinction coeff.
+    Convenience function to make a basic plot of the light curve extracted with DIA
     """
-    if filtr == "i":
-        k, k_er = ki, ki_er
-    if filtr == "r":
-        k, k_er = kr, kr_er
-    if filtr == "g":
-        k, k_er = kg, kg_er
-    if filtr == 'V':
-        k, k_er = kV, kV_er
-    if filtr == 'B':
-        k, k_er = kB, kB_er
-    return  k, k_er
+    plt.close('all')
+    fig, ax = plt.subplots()
+    ax.errorbar(x=phot_df['JD'].values, y = phot_df['H50_{:}'.format(fltr)].values,\
+                yerr = phot_df['H50_{:}_ERR'.format(fltr)].values,\
+                 fmt = '.', color = 'cornflowerblue')
+    ax.invert_yaxis()
+    ax.set_xlabel('JD [days]', fontsize = 14)
+    ax.set_ylabel('Magnitude', fontsize = 14)
+    ax.grid(alpha = 0.2)
+    fig.tight_layout()
+    fig.savefig(os.path.join(target_dir, '{:}Phot_{:}_{:}_LC.png'.format(phot_type, fltr, ap)))
 
-# Set up the parser
-parser = argparse.ArgumentParser(description='Perform aperture photometry on images within specified directories and output LC and other plots')
-parser.add_argument('path', help='The path to folder containing .fits files.')
-parser.add_argument('ID', type=str, help='The target ID.')
-parser.add_argument('AutoAperture', type=str, help='Use the automatic aperture? (y/n)')
-parser.add_argument('verbose', type=str, help='Want to know whats happening? (y/n)')
-args = parser.parse_args()
 
-target_dir = os.path.abspath(args.path)
-if not os.path.isdir(target_dir):
-    print("This directory doesn't exist!")
-    raise SystemExit(1)
-
-# Define path to nightly summaries
-night_sum = os.path.join(target_dir, 'Nightly_Summaries')
-
-# Begin the action!
-fm = FitsManager(target_dir, depth=0)
-good_ims = []
-print(fm)
-
-# --------------------------------------------------------------------------------------
-# Stage 1 - Build the PSF model for the images and get median FWHM
-PSF = Sequence([
-        blocks.detection.PointSourceDetection(), # stars detection
-        blocks.Cutouts(clean=False), 
-        blocks.detection.LimitStars(min=12), # making stars cutouts
-        blocks.MedianPSF(),                 # building PSF
-        blocks.psf.Moffat2D(),              # modeling PSF
-])
-
-if os.path.isdir(night_sum):
-    try:
-        sum_file = glob.glob(os.path.join(night_sum, str('Summary_*')))[0]
-        sum_df = pd.read_csv(sum_file) 
-        best_img = sum_df[sum_df['FWHM [pix]'] == sum_df['FWHM [pix]'].min()]['File'].to_list()[0]
-        ref = Image(best_img)
-        PSF.run(ref, show_progress=False)
-        ref.show()
-        plt.show()
-    except:
-        print('No nightly summary found... Continuing manual search for best image...')
-else:  
-    try:
-        ref = Image(fm.all_images[0])
-        # Run this and then show us the stars to pick the target
-        PSF.run(ref, show_progress=True)
-        ref.show()
-        plt.show()
-    except:
-        ref = Image(fm.all_images[1])
-        # Run this and then show us the stars to pick the target
-        PSF.run(ref, show_progress=True)
-        ref.show()
-        plt.show()
-
-# Choose the target and aperture size
-target_no = int(input('Which is the target? '))
-
-# First get the FWHM of each image, find the median
-fwhm_data = blocks.Get("fwhm")
-get_fwhm = Sequence([
-    *PSF[0:-1],   # apply the same calibration to all images
-    blocks.psf.Moffat2D(reference=ref),   # providing a reference improve the PSF optimisation
-    fwhm_data,
-])
-
-for im in fm.all_images:
-    if args.verbose == 'y':
-        print('Working on {:}'.format(im))
-    try:
-        get_fwhm.run(im, show_progress = False)
-        good_ims += [im]
-    except:
-        if args.verbose == 'y':
-            print('Failed! Moving on.')
-        
-fwhm = np.array(fwhm_data.fwhm)
-med_fwhm = np.median(fwhm)
-print('Median FWHM [pix]: ', np.round(med_fwhm, 1))
-
-# --------------------------------------------------------------------------------------
-# Stage 2 - Photometry!
-phot_data = blocks.Get("jd_utc", "fluxes", "errors", "airmass", "exposure")
-aps = np.arange(0.5, 2, 0.1)
-aps = np.append(aps, 3)
+if __name__ == '__main__':
     
-if args.AutoAperture == 'n' or args.AutoAperture == 'N':
-    ap_size = float(input('What aperture size would you like? '))
-    ap_index = 0
+    # Set up the parser
+    parser = argparse.ArgumentParser(description='Perform aperture photometry on images within specified directories and output LC and other plots')
+    parser.add_argument('Path', help='The path to folder containing .fits files.')
+    parser.add_argument('ID', type=str, help='The target ID.')
+    parser.add_argument('AutoAperture', type=str, help='Use the automatic aperture? (y/n)')
+    parser.add_argument('Threshold', type=int, help = 'The threshold for detection (sigmas above bkg)')
+    parser.add_argument('Verbose', type=str, help='Want to know whats happening? (y/n)')
+    args = parser.parse_args()
 
-    fixed_photometry = Sequence([
-        *PSF[0:-1],
-        blocks.detection.LimitStars(min=12),   # discard images not featuring enough stars
+    target_dir = os.path.abspath(args.Path)
+    if not os.path.isdir(target_dir):
+        print("This directory doesn't exist!")
+        raise SystemExit(1)
+
+    # Define path to nightly summaries
+    night_sum = os.path.join(target_dir, 'Nightly_Summaries')
+
+    # Begin the action!
+    fm = FitsManager(target_dir, depth=0)
+    good_ims = []
+
+    if args.Verbose == 'y':
+        print(fm)
+
+    # --------------------------------------------------------------------------------------
+    # Stage 1 - Build the PSF model for the images and get median FWHM
+    detect = Sequence([
+            blocks.detection.PointSourceDetection(threshold = args.Threshold), # stars detection
+            blocks.detection.LimitStars(10),
+    ])
+
+    # If summary files exist, use those to find the median. Otherwise, need to re-extract
+    if os.path.isdir(night_sum):
+        try:
+            sum_file = glob.glob(os.path.join(night_sum, str('Summary_*')))[0]
+            sum_df = pd.read_csv(sum_file) 
+            best_img = sum_df[sum_df['FWHM [pix]'] == sum_df['FWHM [pix]'].min()]['File'].to_list()[0]
+            med_fwhm = np.median(sum_df['FWHM [pix]'])
+            ref = Image(best_img)
+            detect.run(ref, show_progress=False)
+            ref.show()
+            plt.show()
+
+            for im in fm.all_images:
+                if args.Verbose == 'y' or args.Verbose == 'Y':
+                    print('Working on {:}'.format(im))
+                try:
+                    detect.run(im, show_progress = False)
+                    good_ims += [im]
+                except:
+                    if args.Verbose == 'y' or args.Verbose == 'Y':
+                        print('Failed! Moving on.')
+        except:
+            print('No nightly summary found... Continuing manual search for best image...')
+    else:  
+        try:
+            ref = Image(fm.all_images[0])
+            # Run this and then show us the stars to pick the target
+            detect.run(ref, show_progress=True)
+            ref.show()
+            plt.show()
+        except:
+            ref = Image(fm.all_images[1])
+            # Run this and then show us the stars to pick the target
+            detect.run(ref, show_progress=True)
+            ref.show()
+            plt.show()
+
+        fwhm_data = blocks.Get("fwhm")
+        get_fwhm = Sequence([
+            *detect[0:-1],   # apply the same calibration to all images
+            blocks.Cutouts(clean=True),
+            blocks.MedianPSF(),
+            blocks.psf.Moffat2D(),
+            fwhm_data,
+        ])
+
+        for im in fm.all_images:
+            if args.Verbose == 'y' or args.Verbose == 'Y':
+                print('Working on {:}'.format(im))
+            try:
+                get_fwhm.run(im, show_progress = False)
+                good_ims += [im]
+            except:
+                raise
+                if args.Verbose == 'y' or args.Verbose == 'Y':
+                    print('Failed! Moving on.')
+
+        fwhm = np.array(fwhm_data.fwhm)
+        med_fwhm = np.median(fwhm)
+
+    # Choose the target and aperture size
+    target_no = int(input('Which is the target? '))
+
+    print('Median FWHM [pix]: ', np.round(med_fwhm, 1))
+
+    # --------------------------------------------------------------------------------------
+    # Stage 2 - Photometry!
+    phot_data = blocks.Get("jd_utc", "fluxes", "errors", "airmass", "exposure")
+    aps = np.arange(0.5, 2, 0.1)
+    aps = np.append(aps, 3)
+
+    if args.AutoAperture == 'n' or args.AutoAperture == 'N':
+        ap_size = float(input('What aperture size would you like? '))
+        ap_index = 0
+
+        fixed_photometry = Sequence([
+            *detect[0:-1],
+            blocks.detection.LimitStars(min=10),   # discard images not featuring enough stars
+            blocks.Twirl(ref.stars_coords, n=20),  # compute image transformation
+
+            # set stars to the reference ones and apply the inverse
+            # transformation previously found to match the ones in the image
+            blocks.Set(stars_coords=ref.stars_coords),
+            blocks.AffineTransform(data=False, inverse=True),
+
+            #blocks.BalletCentroid(),                            # stars centroiding
+            blocks.COM(),
+            blocks.PhotutilsAperturePhotometry(apertures=np.array([ap_size]), r_in = 3*med_fwhm, r_out=5*med_fwhm, scale = False), # aperture photometry
+
+            # Retrieving data from images in a conveniant way
+            phot_data,
+        ])
+
+    auto_photometry = Sequence([
+        *detect[0:-1],
+        blocks.detection.LimitStars(min=10),   # discard images not featuring enough stars
         blocks.Twirl(ref.stars_coords, n=20),  # compute image transformation
 
         # set stars to the reference ones and apply the inverse
@@ -187,73 +222,59 @@ if args.AutoAperture == 'n' or args.AutoAperture == 'N':
         blocks.Set(stars_coords=ref.stars_coords),
         blocks.AffineTransform(data=False, inverse=True),
 
-        blocks.BalletCentroid(),                            # stars centroiding
-        blocks.PhotutilsAperturePhotometry(apertures=np.array([ap_size]), r_in = 3.5*med_fwhm, r_out=5.0*med_fwhm, scale = False), # aperture photometry
+        #blocks.BalletCentroid(), # stars centroiding
+        blocks.COM(),
+        blocks.PhotutilsAperturePhotometry(apertures=aps, r_in = 3, r_out=5.0, scale = med_fwhm), # aperture photometry
 
         # Retrieving data from images in a conveniant way
         phot_data,
     ])
 
-auto_photometry = Sequence([
-    *PSF[0:-1],
-    blocks.psf.Moffat2D(reference=ref),
-    blocks.detection.LimitStars(min=12),   # discard images not featuring enough stars
-    blocks.Twirl(ref.stars_coords, n=12),  # compute image transformation
+    filt = ref.header['FILTER']
 
-    # set stars to the reference ones and apply the inverse
-    # transformation previously found to match the ones in the image
-    blocks.Set(stars_coords=ref.stars_coords),
-    blocks.AffineTransform(data=False, inverse=True),
+    if args.AutoAperture == 'n' or args.AutoAperture == 'N': 
+        fixed_photometry.run(good_ims)
+    else: 
+        auto_photometry.run(good_ims)
 
-    blocks.BalletCentroid(), # stars centroiding
-    blocks.PhotutilsAperturePhotometry(apertures=aps, r_in = 3.5, r_out=5.0, scale = med_fwhm), # aperture photometry
+    # Calculate inst.mag and convert to pandas df
+    time = np.array(phot_data.jd_utc)
+    exp = np.array(phot_data.exposure[0].value)
+    fluxes = np.array(phot_data.fluxes)
+    fluxes_er = np.array(phot_data.errors)
 
-    # Retrieving data from images in a conveniant way
-    phot_data,
-])
+    # Find the best aperture
+    if args.AutoAperture == 'y' or args.AutoAperture == 'Y': 
+        ap_index = np.argmax(fluxes[0, :, target_no]/fluxes_er[0, :, target_no])
+        ap_size = med_fwhm*aps[ap_index]
 
-filt = ref.header['FILTER']
-k, k_er = get_ext_coeffs(filt)
+    airmass = np.array(phot_data.airmass)
+    flux = fluxes[:, ap_index, target_no]
+    flux_er = fluxes_er[:, ap_index, target_no]
+    mag = -2.5*np.log10(flux)
+    mag_er = (2.5/np.log(10))*(flux_er/flux)
 
-if args.AutoAperture == 'n' or args.AutoAperture == 'N': 
-    fixed_photometry.run(good_ims)
-else: 
-    auto_photometry.run(good_ims)
-    
-# Calculate inst.mag and convert to pandas df
-time = np.array(phot_data.jd_utc)
-exp = np.array(phot_data.exposure[0].value)
-fluxes = np.array(phot_data.fluxes)
-fluxes_er = np.array(phot_data.errors)
+    for im in good_ims:
+        ZP, ZP_er = get_zeropoint(im, ap_size)
+        ZP_ar += [ZP]
+        ZP_er_ar += [ZP_er]
 
-# Find the best aperture
-if args.AutoAperture == 'y' or args.AutoAperture == 'Y': 
-    ap_index = np.argmax(fluxes[0, :, target_no]/fluxes_er[0, :, target_no])
-    ap_size = med_fwhm*aps[ap_index]
-    
-airmass = np.array(phot_data.airmass)
-flux = fluxes[:, ap_index, target_no]
-flux_er = fluxes_er[:, ap_index, target_no]
-mag = -2.5*np.log10(flux/exp)
-mag_er = (2.5/np.log(10))*(flux_er/flux)
+    cal_mag = -2.5*np.log10(flux) + np.array(ZP_ar)
+    cal_er = np.sqrt(mag_er**2 + (np.array(ZP_er_ar))**2)
 
-for im in good_ims:
-    ZP, ZP_er = get_zeropoint(im, ap_size)
-    ZP_ar += [ZP]
-    ZP_er_ar += [ZP_er]
+    # --------------------------------------------------------------------------------------
+    # Stage 3 - Save your results and plots!
 
-cal_mag = -2.5*np.log10(flux) + np.array(ZP_ar)
-cal_er = np.sqrt(mag_er**2 + (np.array(ZP_er_ar))**2)
-# --------------------------------------------------------------------------------------
-# Stage 3 - Save your results!
-d = {'JD': time, 'Flux': flux, 'Flux_Er': flux_er, 'Inst_Mag':mag, 'Inst_Mag_Er':mag_er, 'Airmass':airmass, 'Exposure': exp, 'H50_'+str(filt): np.round(cal_mag,3), 'H50_'+str(filt)+'_ER': np.round(cal_er, 3)}
-df = pd.DataFrame(d)
+    d = {'JD': time, 'Flux': flux, 'Flux_Er': flux_er, 'Inst_Mag':mag, 'Inst_Mag_Er':mag_er,\
+         'Airmass':airmass, 'Exposure': exp, 'H50_'+str(filt): np.round(cal_mag,3), 'H50_'+str(filt)+'_ERR': np.round(cal_er, 3)}
+    df = pd.DataFrame(d)
 
-# Make an output folder
-output_path = os.path.join(target_dir, 'Phot_Outputs')
-if not os.path.isdir(output_path):
-    os.mkdir(output_path)
-    
-# Save file     
-file_name = str(os.path.basename(target_dir))+'_aperphot_'+str(args.ID)+'_ap'+str(np.round(ap_size, 2))+'_t'+str(target_no)+'.csv'
-df.to_csv(os.path.join(output_path, file_name))
+    # Make an output folder
+    output_path = os.path.join(target_dir, 'Phot_Outputs')
+    if not os.path.isdir(output_path):
+        os.mkdir(output_path)
+
+    # Save file and plot light curve
+    file_name = str(os.path.basename(target_dir))+'_aperphot_'+str(args.ID)+'_ap'+str(np.round(ap_size, 2))+'_t'+str(target_no)+'.csv'
+    df.to_csv(os.path.join(output_path, file_name))
+    plot_lc(df,filt, str(np.round(ap_size, 2)), output_path, 'Aper')

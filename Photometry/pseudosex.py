@@ -30,7 +30,7 @@ parser.add_argument('path', help='The path to folder containing .fits files.')
 parser.add_argument('depth', type=int, help='How many sub folders to search, i.e if 0 will only access given directory.')
 parser.add_argument('ap_size', type=float, help='The size of the desired aperture for photometry? (use 5 if matching SExtractor)')
 parser.add_argument('sex', type=str, help='Use SExtractor instead? (y/n)')
-parser.add_argument('WCS_flag', type=str, help='Do these files have a WCS? (y/n)')
+parser.add_argument('plot', type=str, help = 'Make diagnostic plots? (y/n)')
 args = parser.parse_args()
 
 # Check if the given directory exists
@@ -49,6 +49,11 @@ param_path = os.path.join(config_path, 'default_Taz50.param')
 output_path = os.path.join(target_dir, 'Phot_Outputs')
 if not os.path.isdir(output_path):
     os.mkdir(output_path)
+
+if args.plot == 'y' or args.plot == 'Y':
+    plot = True
+else:
+    plot = False
     
 # Begin the action!
 fm = FitsManager(target_dir, depth=args.depth)
@@ -63,26 +68,12 @@ detection = Sequence([
     blocks.psf.Moffat2D(),              # modeling PSF
 ])
 
-# Run this and then show us the stars
-found_ref = False
-count = 0
-while found_ref == False:
-    try:
-        ref = Image(image_list[count])
-        detection.run(ref, show_progress=False)
-        found_ref = True
-    except:
-        count += 1
-        
-ref.show()
-plt.show()
-
 data = blocks.Get("fluxes", "errors", "exposure", "airmass", 'sky', 'stars_coords', 'skycoord', 'wcs', 'filter')
 
 # Define the photometry steps
 photometry = Sequence([
     *detection[0:-1],        # apply the same detection process to all images
-    blocks.detection.LimitStars(min=3),   # discard images not featuring enough stars
+    blocks.detection.LimitStars(min=5),   # discard images not featuring enough stars
     blocks.BalletCentroid(),  
     blocks.PhotutilsAperturePhotometry(apertures = [args.ap_size], scale=False), # aperture photometry
     blocks.Peaks(),
@@ -106,8 +97,8 @@ for j in range(0, len(image_list)):
                 process.wait()
                 
                 # Calibrate to GAIA
-                df = read_sex(cat_path)
-                final_df = calibrate_phot(image_list[j], df, fltr, output_path)
+                df = read_sex(cat_path, image_list[j])
+                final_df = calibrate_phot(image_list[j], df, fltr, output_path, plot)
                 fits.setval(image_list[j], keyword='APER_RAD', value=float(args.ap_size))
                 
             except:
@@ -128,26 +119,21 @@ for j in range(0, len(image_list)):
             fltr = str(data.filter[j][0])
             length = len(fluxes[0])
 
-            if args.WCS_flag == 'y':
-                # Calculate the sky coordinates using WCS
-                eq_coords = pixel_to_skycoord(pos[:,0], pos[:,1], WCS)
+  
+            # Calculate the sky coordinates using WCS
+            eq_coords = pixel_to_skycoord(pos[:,0], pos[:,1], WCS)
 
-                d = {'RA': eq_coords.ra, 'DEC': eq_coords.dec, 'MAG_APER': mag[0], 'MAGERR_APER':mag_er[0], 'BACKGROUND': [sky]*length, 'X_IMAGE': pos[:,0], 'Y_IMAGE': pos[:,1], 'AIRMASS':[airmass]*length}
+            d = {'RA': eq_coords.ra, 'DEC': eq_coords.dec, 'MAG_APER': mag[0], 'MAGERR_APER':mag_er[0], 'BACKGROUND': [sky]*length, 'X_IMAGE': pos[:,0], 'Y_IMAGE': pos[:,1], 'AIRMASS':[airmass]*length}
 
-                # Calibrate to GAIA
-                df = pd.DataFrame(d)
-                final_df = calibrate_phot(image_list[j], df, fltr, output_path)
-
-            else:
-                d = {'X_IMAGE': pos[:,0], 'Y_IMAGE': pos[:,1], 'MAG_APER':  mag[0], 'MAGERR_APER':mag_er[0], 'BACKGROUND': [sky]*length, 'AIRMASS':[airmass]*length}
-                final_df = pd.DataFrame(d)
+            # Calibrate to GAIA
+            df = pd.DataFrame(d)
+            final_df = calibrate_phot(image_list[j], df, fltr, output_path, plot)
 
         #Save file 
         file_name = str(os.path.basename(image_list[j]).replace('.fits','')+'_phot.csv')
         final_df.to_csv(os.path.join(output_path, file_name))
         
     except:
-        raise
         print('Unable to perform source extraction on {:}... Moving on!'.format(image_list[j]))
 
 print('Source extraction completed! Zeropoints have been written to images.')

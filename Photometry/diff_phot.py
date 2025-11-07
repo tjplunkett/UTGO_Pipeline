@@ -126,7 +126,8 @@ else:
         blocks.Set(stars_coords=best_im.stars_coords),
         blocks.AffineTransform(data=False, inverse=True),
 
-        blocks.BalletCentroid(),              # stars centroiding
+        #blocks.BalletCentroid(),              # stars centroiding
+        blocks.COM(),
         blocks.PhotutilsAperturePhotometry(), # aperture photometry
         blocks.Peaks(),
 

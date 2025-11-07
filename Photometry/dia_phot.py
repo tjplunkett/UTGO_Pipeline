@@ -34,6 +34,13 @@ import datetime
 import multiprocessing as mp
 from multiprocessing import Pool
 from calibrate_phot import *
+import subprocess as sub
+
+# Get some paths
+code_path = os.path.abspath('/home/obs/UTGO_Pipeline/Photometry')
+config_path = os.path.join(code_path, 'config')
+sex_path = os.path.join(config_path, 'default.sex')
+param_path = os.path.join(config_path, 'default_Taz50.param')
 
 # Let's define any necessary functions
 
@@ -128,9 +135,9 @@ def get_date(im):
     return: 
     date - The string in ddmmyy format
     """
-    ar = im.split('_')[1:4]
-    date = ar[0] + ar[1] + ar[2]
-    return date
+    localtime = fits.getval(im, 'LOCALTIM')
+    date = localtime.split(' ')[0]
+    return date.replace('/','')
 
 def create_subplots(target_dir, norm_ims, diff_ims, positions, ap):
     """
@@ -151,39 +158,57 @@ def create_subplots(target_dir, norm_ims, diff_ims, positions, ap):
         date = get_date(im)
         if date not in dates:
             dates += [date]
-    
-    # Create the figure in order of date
-    fig, ax = plt.subplots(2, len(dates), figsize = (30,10))
 
-    for date in sorted(dates, key=lambda x: datetime.datetime.strptime(x, '%d%m%Y')):
-        for i in range(0, len(diff_ims)):
-            dt = get_date(diff_ims[i])
-            if dt == date:
-                norm = fits.getdata(diff_ims[i].replace('_diff', '')).astype(float)
-                diff = fits.getdata(diff_ims[i]).astype(float)
-                date_obs = fits.getval(diff_ims[i], 'DATE-OBS')
-                n1 = ImageNormalize(diff, interval=ZScaleInterval(),stretch=LinearStretch())
-                n2 = ImageNormalize(norm, interval=ZScaleInterval(),stretch=LinearStretch())
+    try:
+        # Create the figure in order of date
+        fig, ax = plt.subplots(2, len(dates), figsize = (30,10))
 
-                ax[0,j].set_title(date_obs)
-                ax[0,j].imshow(norm, norm = n2, cmap = 'inferno')
-                ax[0,j].set_xlim(positions[0][0] - 19, positions[0][0] + 19)
-                ax[0,j].set_xticks(np.arange(positions[0][0] - 19, positions[0][0] + 19, 10))
-                ax[0,j].set_ylim(positions[0][1] - 19, positions[0][1] + 19)
-                ax[0,j].set_yticks(np.arange(positions[0][1] - 19, positions[0][1] + 19, 10))
+        for date in sorted(dates, key=lambda x: datetime.datetime.strptime(x, '%d%m%Y')):
+            for i in range(0, len(diff_ims)):
+                dt = get_date(diff_ims[i])
+                if dt == date:
+                    norm = fits.getdata(diff_ims[i].replace('_diff', '')).astype(float)
+                    diff = fits.getdata(diff_ims[i]).astype(float)
+                    date_obs = fits.getval(diff_ims[i], 'DATE-OBS')
+                    n1 = ImageNormalize(diff, interval=ZScaleInterval(),stretch=LinearStretch())
+                    n2 = ImageNormalize(norm, interval=ZScaleInterval(),stretch=LinearStretch())
 
-                ax[1,j].imshow(diff, norm = n1, cmap = 'inferno')
-                ax[1,j].set_xlim(positions[0][0] - 19, positions[0][0] + 19)
-                ax[1,j].set_xticks(np.arange(positions[0][0] - 19, positions[0][0] + 19, 10))
-                ax[1,j].set_ylim(positions[0][1] - 19, positions[0][1] + 19)
-                ax[1,j].set_yticks(np.arange(positions[0][1] - 19, positions[0][1] + 19, 10))
-                ax[1,j].add_artist(plt.Circle(positions[0], ap, color='cyan', fill=False, alpha = 1))
+                    ax[0,j].set_title(date_obs)
+                    ax[0,j].imshow(norm, norm = n2, cmap = 'inferno')
+                    ax[0,j].set_xlim(positions[0][0] - 19, positions[0][0] + 19)
+                    ax[0,j].set_xticks(np.arange(positions[0][0] - 19, positions[0][0] + 19, 10))
+                    ax[0,j].set_ylim(positions[0][1] - 19, positions[0][1] + 19)
+                    ax[0,j].set_yticks(np.arange(positions[0][1] - 19, positions[0][1] + 19, 10))
 
-                j = j + 1
-                break
+                    ax[1,j].imshow(diff, norm = n1, cmap = 'inferno')
+                    ax[1,j].set_xlim(positions[0][0] - 19, positions[0][0] + 19)
+                    ax[1,j].set_xticks(np.arange(positions[0][0] - 19, positions[0][0] + 19, 10))
+                    ax[1,j].set_ylim(positions[0][1] - 19, positions[0][1] + 19)
+                    ax[1,j].set_yticks(np.arange(positions[0][1] - 19, positions[0][1] + 19, 10))
+                    ax[1,j].add_artist(plt.Circle(positions[0], ap, color='cyan', fill=False, alpha = 1))
 
-    plt.tight_layout()
-    fig.savefig(os.path.join(target_dir, 'Diff_Check.png'))
+                    j = j + 1
+                    break
+
+        plt.tight_layout()
+        fig.savefig(os.path.join(target_dir, 'Diff_Check.png'))
+    except:
+        print('Only one night of data detected... You can check with DS9 instead!')
+
+def plot_lc(phot_df, target_dir):
+    """
+    Convenience function to make a basic plot of the light curve extracted with DIA
+    """
+    plt.close('all')
+    fig, ax = plt.subplots()
+    ax.errorbar(x=phot_df['JD'].values, y = phot_df['Mag'].values, yerr = phot_df['Mag_Er'].values,\
+                 fmt = '.', color = 'cornflowerblue')
+    ax.invert_yaxis()
+    ax.set_xlabel('JD [days]', fontsize = 14)
+    ax.set_ylabel('Magnitude', fontsize = 14)
+    ax.grid(alpha = 0.2)
+    fig.tight_layout()
+    fig.savefig(os.path.join(target_dir, 'DIA_LC.png'))
            
 def onclick(event):
     """
@@ -230,7 +255,7 @@ def register_ims_aa(im_list, ref_im, x,y, verbose):
     
     # Iterate through frames in list and register
     for im in im_list:
-        if verbose:
+        if verbose == 'y' or verbose == 'Y':
             print('Working on frame: {:} \n'.format(im))
         
         # Get the header information and data from current image
@@ -264,7 +289,7 @@ def register_ims_aa(im_list, ref_im, x,y, verbose):
             fits.writeto(new_im, source, ref_header)
         
 
-def perform_sub(reg_list, ref_im, x,y):
+def perform_sub(reg_list, ref_im, x,y, verbose):
     """
     Function to perform the image subtraction using the Adaptive Bramich algorithm.
     Saves to a new .fits file with _diff.fits at the end. 
@@ -287,7 +312,7 @@ def perform_sub(reg_list, ref_im, x,y):
     # Iterate through the list
     for im in reg_list:
         if im != ref_im:
-            if verbose:
+            if verbose == 'y' or 'Y':
                 print('Working on frame: {:} \n'.format(im))
                 
             # Get target image data and mask saturated pixels
@@ -330,52 +355,97 @@ def perform_sub(reg_list, ref_im, x,y):
             fits.writeto(str(im).replace('.fits', '_kernel.fits'), source_kernel, im_header)
             fits.writeto(str(im).replace('.fits', '_bkg.fits'), background, im_header)
             
-def source_extract(ref_im, target_dir):
+def source_extract(ref_im, target_dir, sex = True):
     """
     Get a catalog of sources and find zeropoint (using Prose since Sextractor doesn't work anymore)
     
     params: 
     
     ref_im - The path to the reference image
+    target_dir - Path to output the catalog
+    sex - Do you want to use Sextractor? 
     """
     data = blocks.Get("fluxes", "errors", "exposure", "airmass", 'sky', 'stars_coords', 'wcs', 'filter')
-    
+        
     phot = Sequence([
-    blocks.detection.PointSourceDetection(),
-    blocks.Cutouts(clean = True),                   # making stars cutouts
-    blocks.MedianPSF(),                 # building PSF
-    blocks.psf.Moffat2D(),              # modeling PSF
-    blocks.BalletCentroid(),  
-    blocks.PhotutilsAperturePhotometry(apertures = np.array([1.25]), r_in = 2, r_out = 3, scale=True), # aperture photometry
-    blocks.Peaks(),
-    data,
-    ])
-    
+        blocks.detection.PointSourceDetection(threshold = 3, min_area = 4),
+        blocks.Cutouts(clean = True),                   # making stars cutouts
+        blocks.MedianPSF(),                 # building PSF
+        blocks.psf.Moffat2D(),              # modeling PSF
+        blocks.COM(),  
+        blocks.PhotutilsAperturePhotometry(apertures = np.array([1.2]), r_in = 3, r_out = 5, scale=True), # aperture photometry
+        data,
+        ])
+
     # Perform the source extraction
     ref = Image(ref_im)
     phot.run(ref)
     fits.setval(ref_im, keyword = 'FWHM', value = float(ref.fwhm))
-    ap = 1.25*float(ref.fwhm)
-    
-    # Make a dataframe for the source catolog
-    sky = np.array(data.sky[0])
-    fluxes, fluxes_er = np.array(data.fluxes[0]), np.array(data.errors[0])
-    airmass = np.array(data.airmass[0])
-    if airmass == None:
-        airmass = 0
-    mag, mag_er = -2.5*np.log10(fluxes), (2.5/np.log(10))*(fluxes_er/fluxes)
-    pos = np.array(data.stars_coords[0])
-    WCS = data.wcs[0]
+    ap = 1.2*float(ref.fwhm)
     fltr = str(data.filter[0][0])
-    eq_coords = pixel_to_skycoord(pos[:,0], pos[:,1], WCS)
-    length = len(fluxes[0])
-    d = {'RA': eq_coords.ra, 'DEC': eq_coords.dec, 'MAG_APER': mag[0], 'MAGERR_APER':mag_er[0],\
-         'BACKGROUND': [sky]*length, 'X_IMAGE': pos[:,0], 'Y_IMAGE': pos[:,1], 'AIRMASS':[airmass]*length}
+    
+    if sex:
+        try:
+        # Try running source extractor
+            cat_name = os.path.basename(ref_im).replace('.fits', '.cat')
+            cat_path = os.path.join(target_dir, cat_name)
+            fltr = fits.getval(ref_im, 'FILTER')
+            command = 'sex ' + ref_im + ' -c '+ sex_path + ' -PARAMETERS_NAME ' + param_path\
+            + ' -PHOT_APERTURES ' + str(2.0*ap) + ' -CATALOG_NAME ' + cat_path
 
-    # Calibrate to GAIA
-    df = pd.DataFrame(d)
-    final_df = calibrate_phot(ref_im, df, fltr, target_dir)
-    final_df.to_csv(ref_im.replace('.fits', '_phot.csv'))
+            process = sub.Popen([command], shell=True)
+            process.wait()
+
+            # Calibrate to GAIA
+            df = read_sex(cat_path, ref_im)
+            final_df = calibrate_phot(ref_im, df, fltr, target_dir, True)
+            fits.setval(ref_im, keyword='APER_RAD', value=ap)
+            final_df.to_csv(ref_im.replace('.fits', '_phot.csv'))
+        except:
+            raise
+            print('SExtractor has failed! Defaulting to PhotUtils...')
+
+            # Make a dataframe for the source catolog
+            sky = np.array(data.sky[0])
+            fluxes, fluxes_er = np.array(data.fluxes[0]), np.array(data.errors[0])
+            airmass = np.array(data.airmass[0])
+            if airmass == None:
+                airmass = 0
+            mag, mag_er = -2.5*np.log10(fluxes), (2.5/np.log(10))*(fluxes_er/fluxes)
+            pos = np.array(data.stars_coords[0])
+            WCS = data.wcs[0]
+            fltr = str(data.filter[0][0])
+            eq_coords = pixel_to_skycoord(pos[:,0], pos[:,1], WCS)
+            length = len(fluxes[0])
+            d = {'RA': eq_coords.ra, 'DEC': eq_coords.dec, 'MAG_APER': mag[0], 'MAGERR_APER':mag_er[0],\
+                 'BACKGROUND': [sky]*length, 'X_IMAGE': pos[:,0], 'Y_IMAGE': pos[:,1], 'AIRMASS':[airmass]*length}
+
+            # Calibrate to GAIA
+            df = pd.DataFrame(d)
+            final_df = calibrate_phot(ref_im, df, fltr, target_dir, True)
+            final_df.to_csv(ref_im.replace('.fits', '_phot.csv'))
+
+    else:
+    # Make a dataframe for the source catolog
+        sky = np.array(data.sky[0])
+        fluxes, fluxes_er = np.array(data.fluxes[0]), np.array(data.errors[0])
+        airmass = np.array(data.airmass[0])
+        if airmass == None:
+            airmass = 0
+        mag, mag_er = -2.5*np.log10(fluxes), (2.5/np.log(10))*(fluxes_er/fluxes)
+        pos = np.array(data.stars_coords[0])
+        WCS = data.wcs[0]
+        fltr = str(data.filter[0][0])
+        eq_coords = pixel_to_skycoord(pos[:,0], pos[:,1], WCS)
+        length = len(fluxes[0])
+        d = {'RA': eq_coords.ra, 'DEC': eq_coords.dec, 'MAG_APER': mag[0], 'MAGERR_APER':mag_er[0],\
+             'BACKGROUND': [sky]*length, 'X_IMAGE': pos[:,0], 'Y_IMAGE': pos[:,1], 'AIRMASS':[airmass]*length}
+
+        # Calibrate to GAIA
+        df = pd.DataFrame(d)
+        final_df = calibrate_phot(ref_im, df, fltr, target_dir, True)
+        final_df.to_csv(ref_im.replace('.fits', '_phot.csv'))
+            
     
     return ap
     
@@ -425,7 +495,7 @@ def target_photometry(target_dir, diff_ims, ref_im, x,y, ap):
     
     # Create aperture and annulus for bkg estimation
     aperture = CircularAperture(positions, r=ap)
-    annulus_aperture = CircularAnnulus(positions, r_in=int(ap*1.2), r_out=int(ap*1.5))
+    annulus_aperture = CircularAnnulus(positions, r_in=int(ap*(3/1.2)), r_out=int(ap*(5/1.2)))
     
     ref_data = fits.getdata(ref_im).astype(float)                                                   
     ref_header = fits.getheader(ref_im)
@@ -442,6 +512,7 @@ def target_photometry(target_dir, diff_ims, ref_im, x,y, ap):
     ref_table['Diff. Flux'] = 0
     ref_table['Flux'] = ref_flux
     ref_table['JD'] = float(Time(date_obs, format='isot', scale='utc').jd)
+    ref_table['Exp'] = float(ref_exp)
       
     # Iterate through diff images
     for diff in diff_ims:
@@ -456,18 +527,20 @@ def target_photometry(target_dir, diff_ims, ref_im, x,y, ap):
         
         # Do photometry! Suited to 50cm with rn = ... and g = 1.8
         phot_table = aperture_photometry(data, aperture)
-        phot_table['Diff. Flux'] = phot_table['aperture_sum']/scale_factor
+        phot_table['Diff. Flux'] = phot_table['aperture_sum'] #/scale_factor
         phot_table['Flux'] = phot_table['Diff. Flux'] + ref_flux
         phot_table['Flux_Er'] = np.sqrt(phot_table['Flux'] + (aperture.area*(1+1/annulus_aperture.area))*(ref_bkg + (7.10**2) + (1.28**2)/2))
-        phot_table['Mag'] = Zp - 2.5*np.log10(phot_table['Flux'])
-        phot_table['Mag_Er'] = np.sqrt((Zp_er**2) + ((2.5/np.log(10))*(phot_table['Flux_Er']/phot_table['Flux']))**2)
+        phot_table['Mag'] = np.round(Zp - 2.5*np.log10(phot_table['Flux']),3)
+        phot_table['Mag_Er'] = np.round(np.sqrt((Zp_er**2) + ((2.5/np.log(10))*(phot_table['Flux_Er']/phot_table['Flux']))**2),3)
         phot_table['JD'] = float(Time(date_obs, format='isot', scale='utc').jd)
-        phot_table['FWHM'] = fwhm
-        phot_table['ExpRatio'] = float(exp)/float(ref_exp)
-        phot_table['SclFac'] = scale_factor
+        phot_table['FWHM'] = np.round(fwhm,3)
+        phot_table['Exp'] = float(exp)
+        phot_table['ExpRatio'] = np.round(float(exp)/float(ref_exp),4)
+        phot_table['SclFac'] = np.round(scale_factor,4)
         master_df = pd.concat([master_df, phot_table.to_pandas()])
     
-    master_df.sort_values('JD').to_csv(os.path.join(target_dir, 'target_dia_phot.csv'))
+    master_df.sort_values('JD').to_csv(os.path.join(target_dir, 'DIA_phot_ap{:}.csv'.format(np.round(ap, 2))))
+    plot_lc(master_df, target_dir)
     
     return positions
                        
@@ -486,6 +559,7 @@ if __name__ == '__main__':
     parser.add_argument('AutoRef', type=str, help='Find the best reference automatically? (y/n)')
     parser.add_argument('Stack', type=str, help='Stack the best frames? If integer, will stack that amount of frames. (int or n/N)')
     parser.add_argument('Redo', type=str, help='Redo subtraction? (y/n)')
+    parser.add_argument('Sex', type=str, help='Use Source Extractor for calibration? (y/n)')
     parser.add_argument('Verbose', type=str, help='Want to know whats happening? (y/n)')
     pargs = parser.parse_args()
     
@@ -561,14 +635,17 @@ if __name__ == '__main__':
         else:
             ref_im = os.path.join(dia_dir, os.path.basename(best_im).replace('.fits','_reg.fits'))
 
-        ap = source_extract(ref_im, dia_dir)
+        if pargs.Sex == 'y' or pargs.Sex == 'Y':
+            ap = source_extract(ref_im, dia_dir, True)
+        else:
+            ap = source_extract(ref_im, dia_dir, False)
 
         # Time to perform subtraction in parallel
         print('Performing image subtraction. Please wait... \n')
         reg_list = glob.glob(os.path.join(dia_dir, '*reg.fits'))
 
         for im in reg_list:
-            args2 += [([im], ref_im, x, y)]
+            args2 += [([im], ref_im, x, y, 'y')]
 
         q.starmap(perform_sub, args2)
         q.terminate()
@@ -594,7 +671,11 @@ if __name__ == '__main__':
             ref_im = os.path.join(dia_dir, os.path.basename(best_im).replace('.fits','_reg.fits'))
         
         x,y = input('Please enter target position on reference (e.g, 127,125): ').split(',')
-        ap = source_extract(ref_im, target_dir)
+        
+        if pargs.Sex == 'y' or pargs.Sex == 'Y':
+            ap = source_extract(ref_im, dia_dir, True)
+        else:
+            ap = source_extract(ref_im, dia_dir, False)
     
     print('Performing photometry. Please wait... \n')
     diff_list = glob.glob(os.path.join(dia_dir, '*diff.fits'))
