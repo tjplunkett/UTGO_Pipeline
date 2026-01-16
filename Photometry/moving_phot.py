@@ -15,6 +15,7 @@ Organisation: UTAS
 import glob
 import argparse 
 import os
+import sep
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
@@ -26,8 +27,9 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 from dia_phot import *
+from scipy import ndimage
 
-def make_skip_stack(target_dir, best_df, best_im): 
+def make_skip_stack(target_dir, best_df, best_im, skip): 
     """ 
     Creates a median of best images (to avoid residual signal of moving object)
     
@@ -41,19 +43,36 @@ def make_skip_stack(target_dir, best_df, best_im):
     
     Path to the reference frame file
     """
-    data = []
+    data_list = []
+    bkg_values = []
+    
     print(best_df)
     best_im = os.path.join(target_dir, os.path.basename(best_im))
     
-    # If you want a stack, then we will use a simple median on every third image
+    # If you want a stack, then we will use a simple median using images of every (skip) interval
     if len(best_df) > 0:
-        best_files = best_df['File'][::3]
+        best_files = best_df['File'][::int(skip)]
        
     for im in best_files:
         new_fl = os.path.join(target_dir, os.path.basename(im))
-        data += [fits.getdata(new_fl.replace('.fits','_reg.fits')).astype(float)]
+        reg_file = new_fl.replace('.fits', '_reg.fits')
+
+        img = fits.getdata(reg_file).astype(float)
+        im_mask = img > 30000
+        im_mask = ndimage.binary_dilation(im_mask, iterations=10)
+
+        # Background subtraction
+        bkg = sep.Background(img, mask = im_mask, bw = 32, bh = 32, fw = 3, fh = 3).back()
+        img_sub = img - bkg
+        bkg_values.append(np.median(bkg))
+        data_list.append(img_sub)
     
-    master_data = np.median(data, axis=0)
+    master_data = np.median(data_list, axis=0)
+
+    # Re-add the median background
+    global_bkg = np.median(bkg_values)
+    master_data = master_data + global_bkg
+    
     master_header = fits.getheader(best_im.replace('.fits','_reg.fits'))
     master_header['Stack'] = "Median stack of {:} images: {:}".format(len(best_files), best_files.to_list())
     fits.writeto(os.path.join(target_dir, 'ref.fits'), master_data, master_header, overwrite = True)
@@ -258,6 +277,7 @@ if __name__ == '__main__':
     parser.add_argument('Path', help='The path to folder containing .fits files.')
     parser.add_argument('Visual', type=str, help='Visually choose object? (y/n)')
     parser.add_argument('AutoRef', type=str, help='Make automatic reference frame? (y/n)')
+    parser.add_argument('Skip', type=str, help='Interval of frames to stack (e.g., type 5 for every fifth image)')
     parser.add_argument('Redo', type=str, help='Redo subtraction? (y/n)')
     parser.add_argument('Distance', type=int, help='Max distance from expected position to consider a match (e.g 10 pix)')
     parser.add_argument('ID', type=str, help='Target name (to put into phot file name)')
@@ -277,6 +297,7 @@ if __name__ == '__main__':
 
     # Define some constants and arrays
     ref_auto = str(pargs.AutoRef)
+    skip = int(pargs.Skip)
     verbose = str(pargs.Verbose)
     vis = str(pargs.Visual)
     args, args2 = [],[]
@@ -333,7 +354,7 @@ if __name__ == '__main__':
         p.starmap(register_ims_ast, args)
         p.close()
 
-        ref_im = make_skip_stack(dia_dir, best_df, best_im)
+        ref_im = make_skip_stack(dia_dir, best_df, best_im, skip)
         ap = source_extract(ref_im, dia_dir, True)
 
         # Time to perform subtraction in parallel
@@ -406,6 +427,6 @@ if __name__ == '__main__':
 
     # Perform the photometry
     data_df = moving_photometry(dia_dir, good_ims, ref_im, x_coords, y_coords, str(pargs.ID), ap)
-    data_df = data_df[data_df['Mag_Er'] < 0.15]
+    data_df = data_df[data_df['Mag_Er'] < 0.2]
     plot_lc(data_df, dia_dir)
     print('Moving object photometry has been extracted! Time to call Bruce Willis')

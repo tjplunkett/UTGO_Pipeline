@@ -9,6 +9,8 @@ Date: Wed 9 Oct 2024
 
 Organisation: UTAS
 
+# To do - Global masks for variable stars, iteration to select reference frames
+
 """
 # Import necessary package
 from prose import Image, Sequence, blocks
@@ -21,7 +23,8 @@ from astropy.io import fits
 from astropy.time import Time
 from astropy import wcs
 from astropy.wcs.utils import pixel_to_skycoord
-from astropy.visualization import LinearStretch, ZScaleInterval, ImageNormalize 
+from astropy.visualization import LinearStretch, ZScaleInterval, ImageNormalize
+from astropy.stats import sigma_clipped_stats
 import sep
 from ois import optimal_system, eval_adpative_kernel
 from scipy import ndimage
@@ -68,11 +71,14 @@ def find_ref(target_dir, norm_ims):
             
             # Write FWHM/Bkg data to header
             for fl in df.File:
+                fwhm = float(df[df.File == fl]['FWHM [pix]'].to_list()[0])
+                bkg = float(df[df.File == fl]['Bkg [adu/s]'].to_list()[0])
+                quality = 10*(1/fwhm)*(1/(bkg**2))
+                
                 new_fl = os.path.join(target_dir, os.path.basename(fl))
-                fits.setval(new_fl, keyword = 'FWHM',\
-                            value = float(df[df.File == fl]['FWHM [pix]'].to_list()[0]), after = 'SEEING')
-                fits.setval(new_fl, keyword = 'Bkg',\
-                            value = float(df[df.File == fl]['Bkg [adu/s]'].to_list()[0]), after = 'SEEING')
+                fits.setval(new_fl, keyword = 'FWHM', value = fwhm, after = 'SEEING')
+                fits.setval(new_fl, keyword = 'Bkg', value = bkg, after = 'SEEING')
+                fits.setval(new_fl, keyword = 'QUALITY', after = 'SEEING', value = quality)
     
             if i == 0:
                 best_im = temp
@@ -88,7 +94,7 @@ def find_ref(target_dir, norm_ims):
         best_im = os.path.join(target_dir,fl_choice)
         best_df = pd.DataFrame()
     
-    return best_im, best_df 
+    return best_im, best_df
 
 def make_stack(target_dir, best_df, best_im, n_ims): 
     """ 
@@ -99,34 +105,76 @@ def make_stack(target_dir, best_df, best_im, n_ims):
     target_dir - The path to the directory with fits files
     
     best_df - The best night summary data in dataframe
+
+    best_im - Astrometric reference (lowest FWHM/bkg)
+
+    n_ims - The desired (upper limit) number of images to stack
     
     returns:
     
     Path to the reference frame file
     """
-    data = []
     print(best_df)
     best_im = os.path.join(target_dir, os.path.basename(best_im))
-    # If you want a stack, then we will use a simple median
+    exp_list = []
+    best_files = []
+    data_list = []
+    bkg_values = []
+
+    # Select images to include, choosing only matching exposure times (most common)
     if len(best_df) > 0 and len(best_df) > n_ims:
-        best_files = best_df['File'][0:int(n_ims)]
-    if len(best_df) > 0 and len(best_df) <= n_ims:
-        best_files = best_df['File']
+        best_list = best_df['File'][0:int(n_ims)].to_list()
+    elif len(best_df) > 0:
+        best_list = best_df['File'].to_list()
         
+    for file in best_list:
+        exp_list += [float(fits.getval(file, 'EXPTIME'))]
+
+    exp_list = np.array(exp_list)
+    unique_exp, counts = np.unique(exp_list, return_counts = True)
+    best_exp = unique_exp[np.argmax(counts)]
+    best_files = [fname for fname, exptime in zip(best_list, exp_list) if exptime == best_exp]
+
+    # Write the files to be used for the reference to an ascii file
+    ref_file = os.path.join(target_dir, 'ref_list')
+    with open(ref_file, "w", encoding="ascii") as f:
+        for filename in best_files:
+            f.write(f"{filename}\n")
+
+    # --- Load images, subtract background ---
     for im in best_files:
         new_fl = os.path.join(target_dir, os.path.basename(im))
-        data += [fits.getdata(new_fl.replace('.fits','_reg.fits')).astype(float)]
+        reg_file = new_fl.replace('.fits', '_reg.fits')
+
+        img = fits.getdata(reg_file).astype(float)
+        hdr = fits.getheader(reg_file)
+
+        # Background subtraction
+        bkg = sep.Background(img)
+        img_sub = img - bkg.back()
+        bkg_values.append(np.median(bkg.back()))
+        data_list.append(img_sub)
     
-    master_data = np.median(data, axis=0)
+    master_data = np.median(data_list, axis=0)
+
+    # Re-add the median background
+    global_bkg = np.median(bkg_values)
+    master_data = master_data + global_bkg
+
+    # --- Output to FITS ---
     master_header = fits.getheader(best_im.replace('.fits','_reg.fits'))
-    master_header['Stack'] = "Median stack of {:} images: {:}".format(n_ims, best_files.to_list())
-    fits.writeto(os.path.join(target_dir, 'ref.fits'), master_data, master_header, overwrite = True)
-    
-    return os.path.join(target_dir, 'ref.fits')
+    master_header['STACK'] = f"Median stack of {len(best_files)} images"
+    master_header['BKGADD'] = (global_bkg, "Median background added back")
+
+    out_path = os.path.join(target_dir, 'ref.fits')
+    fits.writeto(out_path, master_data, master_header, overwrite=True)
+
+    return out_path
+
 
 def get_date(im):
     """
-    Get the date of an image from its title (assumes {target_name}_dd_mm_yy_... format)
+    Get the date of an image from its header
     
     params:
     
@@ -199,6 +247,7 @@ def plot_lc(phot_df, target_dir):
     """
     Convenience function to make a basic plot of the light curve extracted with DIA
     """
+    phot_df = phot_df[phot_df.Mag_Er < 0.15]
     plt.close('all')
     fig, ax = plt.subplots()
     ax.errorbar(x=phot_df['JD'].values, y = phot_df['Mag'].values, yerr = phot_df['Mag_Er'].values,\
@@ -218,16 +267,6 @@ def onclick(event):
     if event.dblclick:
         if event.xdata != None and event.ydata != None:
             ix, iy = event.xdata, event.ydata
-            
-def onclick_multi(event):
-    """
-    Event handler for selecting comps
-    """
-    global comp_coords
-    if event.dblclick:
-        if event.xdata != None and event.ydata != None:
-            ix, iy = event.xdata, event.ydata
-            comp_coords += [(ix,iy)]
             
 def on_esc(event):
     """
@@ -333,14 +372,12 @@ def perform_sub(reg_list, ref_im, x,y, verbose):
                 kern_size = 7
             if kern_size > 13:
                 kern_size = 13
-                
-                            
-            print(kern_size)
             
             # Subtraction time!
             diff_image, optimal_image, kernel, _ = optimal_system(masked_im, masked_ref,\
                                                                kernelshape = (kern_size,kern_size), bkgdegree = None,\
                                                                method = 'AdaptiveBramich', poly_degree = 2)
+
             
             # Get the kernel at the object location and find the scale factor
             source_kernel = eval_adpative_kernel(kernel, 250 + (x - int(x)), 250 + (y - int(y)))
@@ -354,10 +391,62 @@ def perform_sub(reg_list, ref_im, x,y, verbose):
             fits.writeto(str(im).replace('.fits', '_diff.fits'), diff_image.data, im_header)
             fits.writeto(str(im).replace('.fits', '_kernel.fits'), source_kernel, im_header)
             fits.writeto(str(im).replace('.fits', '_bkg.fits'), background, im_header)
+
+def calculate_metric(dia_dir, diff_ims):
+    """
+    Evaulate the quality of the image subtraction using Yang et al. 2023 metric
+
+    params:
+    dia_dir - The path to the DIA directory
+    diff_ims - The list of difference image paths
+    
+    return:
+    abs_fname - Path to the sum file
+    """
+    # First we iterate through the diff. images and calculate the sum and mean of their absolute values
+    # Write the sum out for future use in centroiding
+    for i in range(0, len(diff_ims)):
+        diff = fits.getdata(diff_ims[i]).astype(float)
+        if i == 0:
+            s = abs(diff)
+        if i > 0:
+            s = s + abs(diff)
+
+    av = s/len(diff_ims)
+    dummy_header = fits.getheader(diff_ims[0])
+    dummy_header['IMAGETYP'] = 'AbsDiffSum'
+    abs_fname = os.path.join(dia_dir, 'abs.fits')
+    mask_fname = os.path.join(dia_dir, 'global_mask.fits')
+    fits.writeto(abs_fname, s, dummy_header, overwrite= True)
+
+    # Use the average to find a mask for variable stars in the images
+    variable_mask = av > 500
+    variable_mask = ndimage.binary_dilation(variable_mask, iterations=10)
+
+    # Now iterate through and calculate the Yang metric
+    for diff_im in diff_ims:
+        diff = fits.getdata(diff_im).astype(float)
+        diff_mask = diff == 0
+        im = diff_im.replace('_diff.fits','.fits')
+        im_data = fits.getdata(im).astype('float')
+        im_mask = im_data > 30000
+        im_mask = ndimage.binary_dilation(im_mask, iterations=10)
+        total_mask = im_mask | variable_mask
+        total_mask = total_mask | diff_mask
+        masked_im = np.ma.masked_array(im_data, total_mask)
+        masked_diff = np.ma.masked_array(diff, total_mask)
+        im_ratio = np.divide(masked_diff, np.ma.sqrt(masked_im))
+        sigma_sub = np.nanstd(im_ratio)
+        fits.setval(diff_im, keyword='SigmaSub', value = float(sigma_sub))
+
+    # Write out the global mask for interest
+    fits.writeto(mask_fname, total_mask.astype(int), overwrite = True)
+
+    return abs_fname
             
 def source_extract(ref_im, target_dir, sex = True):
     """
-    Get a catalog of sources and find zeropoint (using Prose since Sextractor doesn't work anymore)
+    Get a catalog of sources and find zeropoint, either using PhotUtils or SExtractor
     
     params: 
     
@@ -449,7 +538,7 @@ def source_extract(ref_im, target_dir, sex = True):
     
     return ap
     
-def refine_pos(diff_ims, x,y):
+def refine_pos(abs_img, x,y):
     """
     Function to refine the position of the object in a simple way
     
@@ -459,13 +548,7 @@ def refine_pos(diff_ims, x,y):
     return: 
     pos_new - The centroided (x,y) position
     """
-    for i in range(0, len(diff_ims)):
-        diff = fits.getdata(diff_ims[i]).astype(float)
-        if i == 0:
-            s = abs(diff)
-        if i > 0:
-            s = s + abs(diff)
-        
+    s = fits.getdata(abs_img)
     pos_new = centroid_sources(s, float(x), float(y), box_size = 9, centroid_func=centroid_com)
     pos_new = [(pos_new[0][0], pos_new[1][0])]
     
@@ -474,7 +557,7 @@ def refine_pos(diff_ims, x,y):
     return pos_new
      
 
-def target_photometry(target_dir, diff_ims, ref_im, x,y, ap):
+def target_photometry(target_dir, diff_ims, ref_im, abs_img, x,y, ap):
     """
     Perform aperture photometry on the difference images for the target object
     
@@ -489,7 +572,7 @@ def target_photometry(target_dir, diff_ims, ref_im, x,y, ap):
     # Function to perform the aperture photometry on diff images
     master_df = pd.DataFrame()
     try:
-        positions = refine_pos(diff_ims, x,y)
+        positions = refine_pos(abs_img, x,y)
     except:
         positions = [(x,y)]
     
@@ -517,6 +600,7 @@ def target_photometry(target_dir, diff_ims, ref_im, x,y, ap):
     # Iterate through diff images
     for diff in diff_ims:
         scale_factor = float(fits.getval(diff, 'SclFac'))
+        sigma_sub = float(fits.getval(diff, 'SigmaSub'))
         data = fits.getdata(diff).astype(float)
         date_obs = fits.getval(diff, 'DATE-OBS')
         try:
@@ -525,9 +609,11 @@ def target_photometry(target_dir, diff_ims, ref_im, x,y, ap):
             fwhm = np.nan
         exp = fits.getval(diff, 'EXPTIME')
         
-        # Do photometry! Suited to 50cm with rn = ... and g = 1.8
+        # Do photometry! Suited to 50cm with rn = 7.1 and g = 1.8
         phot_table = aperture_photometry(data, aperture)
-        phot_table['Diff. Flux'] = phot_table['aperture_sum'] #/scale_factor
+        diff_bkg = ApertureStats(data, annulus_aperture).median
+        phot_table['Diff. Bkg'] = diff_bkg
+        phot_table['Diff. Flux'] = (phot_table['aperture_sum'] - diff_bkg*aperture.area)/scale_factor
         phot_table['Flux'] = phot_table['Diff. Flux'] + ref_flux
         phot_table['Flux_Er'] = np.sqrt(phot_table['Flux'] + (aperture.area*(1+1/annulus_aperture.area))*(ref_bkg + (7.10**2) + (1.28**2)/2))
         phot_table['Mag'] = np.round(Zp - 2.5*np.log10(phot_table['Flux']),3)
@@ -537,6 +623,7 @@ def target_photometry(target_dir, diff_ims, ref_im, x,y, ap):
         phot_table['Exp'] = float(exp)
         phot_table['ExpRatio'] = np.round(float(exp)/float(ref_exp),4)
         phot_table['SclFac'] = np.round(scale_factor,4)
+        phot_table['SigmaSub'] = np.round(sigma_sub, 4)
         master_df = pd.concat([master_df, phot_table.to_pandas()])
     
     master_df.sort_values('JD').to_csv(os.path.join(target_dir, 'DIA_phot_ap{:}.csv'.format(np.round(ap, 2))))
@@ -679,6 +766,7 @@ if __name__ == '__main__':
     
     print('Performing photometry. Please wait... \n')
     diff_list = glob.glob(os.path.join(dia_dir, '*diff.fits'))
-    pos = target_photometry(dia_dir, diff_list, ref_im, float(x), float(y), ap)
+    abs_img = calculate_metric(dia_dir, diff_list)
+    pos = target_photometry(dia_dir, diff_list, ref_im, abs_img, float(x), float(y), ap)
     create_subplots(dia_dir, reg_list, diff_list, pos, ap)
     print('Done!')
