@@ -104,7 +104,7 @@ for pth in dim_arr:
         # Define calibration sequence from raw files to reduced
         Calibrate = Sequence([
         blocks.Calibration(darks=fm_cal.all_darks, bias=fm_cal.all_bias, flats=flat_list),
-        blocks.CleanBadPixels(darks = fm_cal.all_darks, flats = flat_list),
+        blocks.CleanBadPixels(darks = fm_cal.all_darks),
         blocks.SaveReduced(destination=pth, overwrite=True),
         ])
         
